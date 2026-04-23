@@ -1,0 +1,120 @@
+# GoReleaser configuration for the Upuai CLI.
+# Docs: https://goreleaser.com
+#
+# Local dry-run:
+#   goreleaser release --snapshot --clean --skip=publish
+#
+# Trigger a real release:
+#   git tag v0.1.0
+#   git push origin v0.1.0
+#   (the .github/workflows/release.yml workflow runs GoReleaser on tag push)
+
+version: 2
+
+project_name: upuai
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: upuai
+    main: .
+    binary: upuai
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X github.com/upuai-cloud/cli/pkg/version.Version={{ .Version }}
+      - -X github.com/upuai-cloud/cli/pkg/version.Commit={{ .ShortCommit }}
+      - -X github.com/upuai-cloud/cli/pkg/version.BuildDate={{ .Date }}
+
+archives:
+  - id: default
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_
+      {{- .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - LICENSE*
+      - README*
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^chore:"
+      - "^test:"
+      - "^ci:"
+      - Merge pull request
+      - Merge branch
+  groups:
+    - title: Features
+      regexp: "^.*feat[(\\w)]*:+.*$"
+      order: 0
+    - title: Bug fixes
+      regexp: "^.*fix[(\\w)]*:+.*$"
+      order: 1
+    - title: Others
+      order: 999
+
+release:
+  draft: false
+  prerelease: auto
+  name_template: "Upuai CLI {{ .Tag }}"
+  footer: |
+    **Installation:**
+
+    ```sh
+    # Homebrew (macOS/Linux)
+    brew tap saiph-ti/upuai-cli
+    brew install upuai
+
+    # Direct download
+    # Linux/macOS:
+    curl -sSfL https://github.com/saiph-ti/upuai-cli/releases/download/{{ .Tag }}/upuai_{{ .Version }}_linux_x86_64.tar.gz | tar -xz
+    sudo mv upuai /usr/local/bin/
+    ```
+
+# Homebrew tap: saiph-ti/homebrew-upuai-cli.
+# Requires HOMEBREW_TAP_TOKEN secret (PAT with Contents:RW on that repo).
+brews:
+  - name: upuai
+    repository:
+      owner: saiph-ti
+      name: homebrew-upuai-cli
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: https://upuai.cloud
+    description: "Upuai Cloud CLI — deploy your apps with a single command."
+    license: MIT
+    test: |
+      system "#{bin}/upuai", "version"
+    install: |
+      bin.install "upuai"

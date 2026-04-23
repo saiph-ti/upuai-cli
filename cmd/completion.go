@@ -1,0 +1,46 @@
+package cmd
+
+import (
+	"os"
+
+	"github.com/spf13/cobra"
+)
+
+var completionCmd = &cobra.Command{
+	Use:   "completion [bash|zsh|fish|powershell]",
+	Short: "Generate shell completion scripts",
+	Long: `Generate shell completion scripts for your shell.
+
+Examples:
+  # Bash
+  upuai completion bash > /etc/bash_completion.d/upuai
+
+  # Zsh
+  upuai completion zsh > "${fpath[1]}/_upuai"
+
+  # Fish
+  upuai completion fish > ~/.config/fish/completions/upuai.fish
+
+  # PowerShell
+  upuai completion powershell | Out-String | Invoke-Expression`,
+	ValidArgs:             []string{"bash", "zsh", "fish", "powershell"},
+	Args:                  cobra.ExactValidArgs(1),
+	DisableFlagsInUseLine: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		switch args[0] {
+		case "bash":
+			return rootCmd.GenBashCompletion(os.Stdout)
+		case "zsh":
+			return rootCmd.GenZshCompletion(os.Stdout)
+		case "fish":
+			return rootCmd.GenFishCompletion(os.Stdout, true)
+		case "powershell":
+			return rootCmd.GenPowerShellCompletionWithDesc(os.Stdout)
+		}
+		return nil
+	},
+}
+
+func init() {
+	rootCmd.AddCommand(completionCmd)
+}
