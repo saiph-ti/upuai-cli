@@ -12,6 +12,14 @@ brew install upuai
 upuai version
 ```
 
+### Scoop (Windows)
+
+```powershell
+scoop bucket add upuai https://github.com/saiph-ti/scoop-upuai-cli
+scoop install upuai
+upuai version
+```
+
 ### Direct download
 
 Grab the right archive for your OS/arch from [Releases](https://github.com/saiph-ti/upuai-cli/releases/latest), untar, and put `upuai` on your `$PATH`.

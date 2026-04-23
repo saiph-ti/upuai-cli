@@ -95,15 +95,22 @@ release:
     # Homebrew (macOS/Linux)
     brew tap saiph-ti/upuai-cli
     brew install upuai
+    ```
 
-    # Direct download
-    # Linux/macOS:
+    ```ps1
+    # Scoop (Windows)
+    scoop bucket add upuai https://github.com/saiph-ti/scoop-upuai-cli
+    scoop install upuai
+    ```
+
+    ```sh
+    # Direct download (Linux x86_64)
     curl -sSfL https://github.com/saiph-ti/upuai-cli/releases/download/{{ .Tag }}/upuai_{{ .Version }}_linux_x86_64.tar.gz | tar -xz
     sudo mv upuai /usr/local/bin/
     ```
 
-# Homebrew tap: saiph-ti/homebrew-upuai-cli.
-# Requires HOMEBREW_TAP_TOKEN secret (PAT with Contents:RW on that repo).
+# Homebrew tap: saiph-ti/homebrew-upuai-cli (macOS + Linux).
+# Requires HOMEBREW_TAP_TOKEN secret (PAT with Contents:RW on that repo + scoop-upuai-cli).
 brews:
   - name: upuai
     repository:
@@ -118,3 +125,20 @@ brews:
       system "#{bin}/upuai", "version"
     install: |
       bin.install "upuai"
+
+# Scoop bucket: saiph-ti/scoop-upuai-cli (Windows).
+# Reuses the same HOMEBREW_TAP_TOKEN secret (PAT scope must include scoop-upuai-cli).
+scoops:
+  - name: upuai
+    repository:
+      owner: saiph-ti
+      name: scoop-upuai-cli
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: bucket
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    homepage: https://upuai.cloud
+    description: "Upuai Cloud CLI — deploy your apps with a single command."
+    license: MIT
