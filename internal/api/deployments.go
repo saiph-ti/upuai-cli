@@ -9,20 +9,22 @@ type DeploymentMeta struct {
 }
 
 type Deployment struct {
-	ID            string          `json:"id"`
-	ServiceID     string          `json:"serviceId"`
-	EnvironmentID string          `json:"environmentId"`
-	Status        string          `json:"status"`
-	Trigger       string          `json:"trigger"`
-	IsActive      bool            `json:"isActive"`
-	CanRedeploy   bool            `json:"canRedeploy"`
-	CanRollback   bool            `json:"canRollback"`
-	URL           string          `json:"url,omitempty"`
-	Meta          *DeploymentMeta `json:"meta,omitempty"`
-	CreatedBy     string          `json:"createdBy,omitempty"`
-	StartedAt     string          `json:"startedAt,omitempty"`
-	FinishedAt    string          `json:"finishedAt,omitempty"`
-	CreatedAt     string          `json:"createdAt"`
+	ID             string          `json:"id"`
+	ServiceID      string          `json:"serviceId"`
+	EnvironmentID  string          `json:"environmentId"`
+	Status         string          `json:"status"`
+	Trigger        string          `json:"trigger"`
+	IsActive       bool            `json:"isActive"`
+	CanRedeploy    bool            `json:"canRedeploy"`
+	CanRollback    bool            `json:"canRollback"`
+	URL            string          `json:"url,omitempty"`
+	Meta           *DeploymentMeta `json:"meta,omitempty"`
+	Builder        string          `json:"builder,omitempty"`
+	DockerfilePath string          `json:"dockerfilePath,omitempty"`
+	CreatedBy      string          `json:"createdBy,omitempty"`
+	StartedAt      string          `json:"startedAt,omitempty"`
+	FinishedAt     string          `json:"finishedAt,omitempty"`
+	CreatedAt      string          `json:"createdAt"`
 }
 
 type DeployRequest struct {

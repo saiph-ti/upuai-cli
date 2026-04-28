@@ -1,7 +1,11 @@
 package cmd
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/spf13/cobra"
+	"github.com/upuai-cloud/cli/internal/api"
 	"github.com/upuai-cloud/cli/internal/config"
 	"github.com/upuai-cloud/cli/internal/ui"
 )
@@ -99,6 +103,74 @@ func requireServiceConfig() (string, string, error) {
 		return "", "", errNoServiceConfig
 	}
 	return cfg.EnvironmentID, cfg.ServiceID, nil
+}
+
+// resolveServiceContext returns (envID, serviceID) for the current command.
+// If serviceRef is empty, it falls back to the linked service in .upuai/config.json
+// (same as requireServiceConfig). If serviceRef is provided, it resolves the
+// environment from the -e flag (or the linked env, or the default), then matches
+// the service by name, slug, or ID against the project's service list.
+func resolveServiceContext(serviceRef string) (envID, serviceID string, err error) {
+	if serviceRef == "" {
+		return requireServiceConfig()
+	}
+
+	projectID, err := requireProject()
+	if err != nil {
+		return "", "", err
+	}
+
+	client := api.NewClient()
+
+	envID, err = resolveEnvironmentID(client, projectID)
+	if err != nil {
+		return "", "", err
+	}
+
+	services, err := client.ListServices(projectID)
+	if err != nil {
+		return "", "", fmt.Errorf("list services: %w", err)
+	}
+	for _, s := range services {
+		if s.ID == serviceRef ||
+			strings.EqualFold(s.Name, serviceRef) ||
+			strings.EqualFold(s.Slug, serviceRef) {
+			return envID, s.ID, nil
+		}
+	}
+	return "", "", fmt.Errorf("service %q not found in project — try 'upuai list' to see available services", serviceRef)
+}
+
+// resolveEnvironmentID picks the environment ID using the same priority as the
+// rest of the CLI: explicit -e flag → linked .upuai/config.json → default name
+// from global config (resolved against the project's environment list).
+func resolveEnvironmentID(client *api.Client, projectID string) (string, error) {
+	cfg, _ := config.LoadProjectConfig()
+
+	// Linked envID wins when no -e was passed.
+	if flagEnvironment == "" && cfg != nil && cfg.EnvironmentID != "" {
+		return cfg.EnvironmentID, nil
+	}
+
+	envName := flagEnvironment
+	if envName == "" {
+		if cfg != nil && cfg.Environment != "" {
+			envName = cfg.Environment
+		} else {
+			envName = config.GetDefaultEnvironment()
+		}
+	}
+
+	envs, err := client.ListEnvironments(projectID)
+	if err != nil {
+		return "", fmt.Errorf("list environments: %w", err)
+	}
+	for _, e := range envs {
+		if e.ID == envName || strings.EqualFold(e.Name, envName) {
+			return e.ID, nil
+		}
+	}
+	return "", fmt.Errorf("environment %q not found in project", envName)
 }
 
 var (

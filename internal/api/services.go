@@ -42,3 +42,29 @@ func (c *Client) CreateService(projectID string, req *CreateServiceRequest) (*Ap
 	}
 	return &service, nil
 }
+
+// CreateBucketAsServiceRequest matches POST /projects/:projectId/buckets/service.
+// Buckets live on a different schema than apps/databases: they need a region
+// (S3-compatible MinIO is a single region today, but the API requires it),
+// and the bucket itself is provisioned in the orchestrator with credentials.
+type CreateBucketAsServiceRequest struct {
+	Name          string `json:"name"`
+	Region        string `json:"region"`
+	EnvironmentID string `json:"environmentId"`
+}
+
+type CreateBucketAsServiceResponse struct {
+	ServiceID string `json:"serviceId"`
+	BucketID  string `json:"bucketId"`
+	Name      string `json:"name"`
+	Region    string `json:"region"`
+}
+
+func (c *Client) CreateBucketAsService(projectID string, req *CreateBucketAsServiceRequest) (*CreateBucketAsServiceResponse, error) {
+	var resp CreateBucketAsServiceResponse
+	err := c.Post(fmt.Sprintf("/projects/%s/buckets/service", projectID), req, &resp)
+	if err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}

@@ -15,9 +15,10 @@ import (
 // Runbook: upuai-core/docs/runbooks/2026-04-24-public-db-endpoint.md
 
 var (
-	dbBackupOut  string
-	dbRestoreIn  string
-	dbAutoEnable bool
+	dbBackupOut    string
+	dbRestoreIn    string
+	dbAutoEnable   bool
+	dbConnectPrint bool
 )
 
 var dbCmd = &cobra.Command{
@@ -27,31 +28,53 @@ var dbCmd = &cobra.Command{
 	Long: `Manage the linked database service.
 
 Examples:
-  upuai db connect              Print the public connection string
-  upuai db backup -o file.dump  Run pg_dump against the public endpoint
-  upuai db restore -i file.dump Restore a dump via pg_restore`,
+  upuai db connect                  Open an interactive psql session
+  upuai db connect --print          Print the public connection string and exit
+  upuai db backup --out file.dump   Run pg_dump against the public endpoint
+  upuai db restore -f file.dump     Restore a dump via pg_restore`,
 }
 
 var dbConnectCmd = &cobra.Command{
 	Use:   "connect",
-	Short: "Print the public connection string for the linked database",
-	Long: `Fetch the public connection string for the linked database service.
+	Short: "Open an interactive psql session against the linked database",
+	Long: `Open an interactive psql shell against the linked database via the public endpoint.
 
-If public access is currently disabled, you will be prompted to enable it
-(use --yes to skip the prompt).`,
+Requires psql to be installed locally (libpq / postgresql-client).
+
+Use --print to skip psql and just emit the connection string (script-friendly),
+or --output json to emit the full access info object.
+
+If public access is currently disabled, you'll be prompted to enable it (use
+--yes or --enable to skip the prompt).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		info, err := loadOrEnablePublicAccess()
 		if err != nil {
 			return err
 		}
+
 		format := getOutputFormat()
 		if format == ui.FormatJSON {
 			ui.PrintJSON(info)
 			return nil
 		}
-		ui.PrintKeyValue("Host", info.Host, "Port", fmt.Sprintf("%d", info.Port))
-		fmt.Println()
-		fmt.Println(info.ConnectionString)
+		if dbConnectPrint {
+			ui.PrintKeyValue("Host", info.Host, "Port", fmt.Sprintf("%d", info.Port))
+			fmt.Println()
+			fmt.Println(info.ConnectionString)
+			return nil
+		}
+
+		ui.PrintInfo(fmt.Sprintf("opening psql → %s:%d", info.Host, info.Port))
+		c := exec.Command("psql", info.ConnectionString)
+		c.Stdin = os.Stdin
+		c.Stdout = os.Stdout
+		c.Stderr = os.Stderr
+		if err := c.Run(); err != nil {
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				os.Exit(exitErr.ExitCode())
+			}
+			return fmt.Errorf("psql failed: %w (is the postgresql client installed?)", err)
+		}
 		return nil
 	},
 }
@@ -75,7 +98,7 @@ If public access is disabled, you'll be asked to enable it first.`,
 		if err != nil {
 			return fmt.Errorf("create output file: %w", err)
 		}
-		defer out.Close()
+		defer func() { _ = out.Close() }()
 
 		ui.PrintInfo(fmt.Sprintf("running pg_dump → %s", dbBackupOut))
 		c := exec.Command("pg_dump", "--format=custom", "--no-owner", "--no-acl", info.ConnectionString)
@@ -189,8 +212,10 @@ func loadOrEnablePublicAccess() (*api.PublicAccessInfo, error) {
 }
 
 func init() {
-	dbBackupCmd.Flags().StringVarP(&dbBackupOut, "out", "o", "", "Output path for the .dump file (required)")
+	// Note: --out has no short flag because -o is reserved for the global --output.
+	dbBackupCmd.Flags().StringVar(&dbBackupOut, "out", "", "Output path for the .dump file (required)")
 	dbRestoreCmd.Flags().StringVarP(&dbRestoreIn, "file", "f", "", "Input .dump file path (required)")
+	dbConnectCmd.Flags().BoolVar(&dbConnectPrint, "print", false, "Print the connection string instead of opening psql")
 	for _, c := range []*cobra.Command{dbConnectCmd, dbBackupCmd, dbRestoreCmd} {
 		c.Flags().BoolVar(&dbAutoEnable, "enable", false, "Auto-enable public access without prompting if currently disabled")
 	}

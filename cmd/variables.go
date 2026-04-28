@@ -9,14 +9,17 @@ import (
 	"github.com/upuai-cloud/cli/internal/ui"
 )
 
+var variablesService string
+
 var variablesCmd = &cobra.Command{
 	Use:     "variables",
-	Aliases: []string{"vars"},
+	Aliases: []string{"vars", "variable"},
 	Short:   "Manage environment variables",
-	Long: `Manage environment variables for the linked service.
+	Long: `Manage environment variables for the linked service (or another service via -s).
 
 Examples:
   upuai variables list
+  upuai variables list -s api
   upuai variables set KEY=VALUE
   upuai variables set KEY1=VALUE1 KEY2=VALUE2
   upuai variables delete KEY`,
@@ -30,11 +33,7 @@ var variablesListCmd = &cobra.Command{
 			return err
 		}
 
-		if _, err := requireProject(); err != nil {
-			return err
-		}
-
-		envID, serviceID, err := requireServiceConfig()
+		envID, serviceID, err := resolveServiceContext(variablesService)
 		if err != nil {
 			return err
 		}
@@ -91,11 +90,7 @@ var variablesSetCmd = &cobra.Command{
 			return err
 		}
 
-		if _, err := requireProject(); err != nil {
-			return err
-		}
-
-		envID, serviceID, err := requireServiceConfig()
+		envID, serviceID, err := resolveServiceContext(variablesService)
 		if err != nil {
 			return err
 		}
@@ -146,11 +141,7 @@ var variablesDeleteCmd = &cobra.Command{
 			return err
 		}
 
-		if _, err := requireProject(); err != nil {
-			return err
-		}
-
-		envID, serviceID, err := requireServiceConfig()
+		envID, serviceID, err := resolveServiceContext(variablesService)
 		if err != nil {
 			return err
 		}
@@ -183,6 +174,7 @@ var variablesDeleteCmd = &cobra.Command{
 }
 
 func init() {
+	variablesCmd.PersistentFlags().StringVarP(&variablesService, "service", "s", "", "Service name, slug, or ID (overrides linked service)")
 	variablesCmd.AddCommand(variablesListCmd)
 	variablesCmd.AddCommand(variablesSetCmd)
 	variablesCmd.AddCommand(variablesDeleteCmd)

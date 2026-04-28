@@ -11,9 +11,10 @@ import (
 
 // serviceTypeLabels are the user-facing names shown in the interactive picker.
 // serviceTypeValues are the corresponding API values (must match API enum).
-var serviceTypeLabels = []string{"app", "database", "docker", "docker image", "function", "github", "gitlab"}
+var serviceTypeLabels = []string{"app", "bucket", "database", "docker", "docker image", "function", "github", "gitlab"}
 var serviceTypeAPIValues = map[string]string{
 	"app":          "empty",
+	"bucket":       "bucket",
 	"database":     "database",
 	"docker":       "docker",
 	"docker image": "docker_image",
@@ -21,6 +22,11 @@ var serviceTypeAPIValues = map[string]string{
 	"github":       "github",
 	"gitlab":       "gitlab",
 }
+
+// defaultBucketRegion mirrors the value the web UI sends today
+// (apps/web/.../bucket-picker-dialog.tsx). MinIO behind the orchestrator
+// is single-region; this is a label, not a routing knob.
+const defaultBucketRegion = "us-east-1"
 
 var (
 	flagAddType               string
@@ -91,6 +97,53 @@ Examples:
 			return fmt.Errorf("service name is required")
 		}
 
+		client := api.NewClient()
+
+		// Bucket has its own provisioning endpoint that creates the underlying
+		// MinIO bucket + credentials in addition to the canvas service node.
+		// Source/builder/start-command flags are not meaningful here.
+		if serviceType == "bucket" {
+			var bucketResp *api.CreateBucketAsServiceResponse
+			err = ui.RunWithSpinner("Creating bucket...", func() error {
+				var createErr error
+				bucketResp, createErr = client.CreateBucketAsService(projectID, &api.CreateBucketAsServiceRequest{
+					Name:          name,
+					Region:        defaultBucketRegion,
+					EnvironmentID: cfg.EnvironmentID,
+				})
+				return createErr
+			})
+			if err != nil {
+				return fmt.Errorf("failed to create bucket: %w", err)
+			}
+
+			format := getOutputFormat()
+			if format == ui.FormatJSON {
+				ui.PrintJSON(bucketResp)
+				return nil
+			}
+
+			fmt.Println()
+			ui.PrintSuccess(fmt.Sprintf("Bucket %s created", bucketResp.Name))
+			ui.PrintKeyValue(
+				"Service ID", bucketResp.ServiceID,
+				"Bucket ID", bucketResp.BucketID,
+				"Name", bucketResp.Name,
+				"Region", bucketResp.Region,
+			)
+
+			if cfg.ServiceID == "" {
+				cfg.ServiceID = bucketResp.ServiceID
+				cfg.ServiceName = bucketResp.Name
+				_ = config.SaveProjectConfig(cfg)
+				fmt.Println()
+				ui.PrintInfo("Linked to new bucket")
+			}
+
+			fmt.Println()
+			return nil
+		}
+
 		// Resolve source and override type if --image or --repo provided
 		var source *api.ServiceSourceConfig
 		if flagAddImage != "" {
@@ -110,8 +163,6 @@ Examples:
 		} else if flagAddRootDir != "" {
 			source = &api.ServiceSourceConfig{RootDirectory: flagAddRootDir}
 		}
-
-		client := api.NewClient()
 
 		var service *api.AppService
 		err = ui.RunWithSpinner("Creating service...", func() error {
@@ -183,7 +234,7 @@ Examples:
 }
 
 func init() {
-	addCmd.Flags().StringVar(&flagAddType, "type", "", "Service type: app, database, docker, docker image, function, github, gitlab")
+	addCmd.Flags().StringVar(&flagAddType, "type", "", "Service type: app, bucket, database, docker, docker image, function, github, gitlab")
 	addCmd.Flags().StringVar(&flagAddName, "name", "", "Service name (skips prompt)")
 	addCmd.Flags().StringVar(&flagAddImage, "image", "", "Docker image to deploy (e.g. nginx:latest) — sets type to docker_image")
 	addCmd.Flags().StringVar(&flagAddRepo, "repo", "", "GitHub repo URL — sets type to github")

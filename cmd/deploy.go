@@ -76,13 +76,29 @@ func runDeploy(projectID, env, serviceID string) error {
 	fmt.Println()
 	ui.PrintSuccess("Deployment triggered!")
 	fmt.Println()
-	ui.PrintKeyValue(
+	kv := []string{
 		"Deployment", deployment.ID,
 		"Status", deployment.Status,
-	)
-	if deployment.URL != "" {
-		ui.PrintKeyValue("URL", deployment.URL)
 	}
+	// Builder default is railpack for every deploy regardless of repo content.
+	// dockerfile is opt-in only — set explicitly via `upuai config set
+	// --builder dockerfile`. Having a Dockerfile in the repo does NOT change
+	// the build. We surface the resolved value once the orchestrator persists
+	// it on the deployment row.
+	if deployment.Builder != "" {
+		kv = append(kv, "Builder", deployment.Builder)
+		if deployment.DockerfilePath != "" {
+			kv = append(kv, "Dockerfile", deployment.DockerfilePath)
+		}
+	} else {
+		kv = append(kv, "Builder", "railpack (default)")
+	}
+	if deployment.URL != "" {
+		kv = append(kv, "URL", deployment.URL)
+	}
+	ui.PrintKeyValue(kv...)
+	fmt.Println()
+	ui.PrintInfo("Switch to dockerfile (opt-in): `upuai config set --builder dockerfile --dockerfile-path Dockerfile`")
 	fmt.Println()
 
 	return nil
