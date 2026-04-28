@@ -6,8 +6,8 @@
 cli/
 ├── main.go                    # Entry point — chama cmd.Execute()
 ├── Makefile                   # Build, install, test, lint, fmt
-├── cmd/                       # Comandos Cobra (27 comandos)
-│   ├── root.go                # Root command, flags globais, helpers (requireAuth, requireProject, requireServiceConfig, getEnvironment, getProjectID)
+├── cmd/                       # Comandos Cobra
+│   ├── root.go                # Root, flags globais, helpers (requireAuth, requireProject, requireServiceConfig, resolveServiceContext, resolveEnvironmentID, getEnvironment, getProjectID)
 │   ├── login.go               # OAuth GitHub + Email OTP
 │   ├── logout.go              # Limpa credentials
 │   ├── whoami.go              # Mostra usuário, org, projeto
@@ -27,9 +27,11 @@ cli/
 │   ├── restart.go             # Reinicia serviço linkado
 │   ├── logs.go                # Visualiza logs do serviço (flags: -n/--lines)
 │   ├── scale.go               # Escala réplicas do serviço
-│   ├── run.go                 # Executa comando com env vars injetadas
+│   ├── run.go                 # Executa comando com env vars injetadas (`-s` opcional, `--` opcional; parse manual via DisableFlagParsing)
+│   ├── shell.go               # Subshell interativo com env vars do service (paridade `railway shell`)
+│   ├── db.go                  # `db connect` (psql interativo) / `db backup` (pg_dump) / `db restore` (pg_restore) — usa endpoint público
 │   ├── environment.go         # Gerencia ambientes (alias: env) — subcommands: list, switch, new, delete
-│   ├── variables.go           # Gerencia env vars (alias: vars) — subcommands: list, set, delete
+│   ├── variables.go           # Gerencia env vars (aliases: vars, variable) — subcommands: list, set, delete; flag `-s/--service` em todos
 │   ├── domain.go              # Gerencia domínios custom (alias: domains) — subcommands: list, add, delete
 │   ├── completion.go          # Gera scripts de autocompletion (bash|zsh|fish|powershell)
 │   ├── upgrade.go             # Atualiza CLI para última versão
@@ -45,7 +47,7 @@ cli/
 │   │   ├── instances.go       # GetLogs, RestartInstance, ScaleInstance
 │   │   ├── variables.go       # ListVariables, SetVariables, DeleteVariable
 │   │   ├── domains.go         # ListDomains, AddDomain, DeleteDomain
-│   │   └── errors.go          # APIError, IsNotFound, IsUnauthorized, IsForbidden
+│   │   └── errors.go          # APIError
 │   ├── auth/
 │   │   ├── oauth.go           # Fluxo OAuth (servidor local, callback, CSRF state)
 │   │   └── token.go           # Decode JWT, verificação de expiração
@@ -77,9 +79,10 @@ cli/
 | **Auth** | `login`, `logout`, `whoami` |
 | **Projeto** | `init`, `link`, `unlink`, `list` (ls), `open`, `delete`, `status` |
 | **Deploy** | `deploy` (up), `redeploy`, `rollback`, `promote`, `down` |
-| **Serviço** | `add`, `restart`, `logs`, `scale`, `run` |
+| **Serviço** | `add`, `restart`, `logs`, `scale`, `run`, `shell` |
+| **Database** | `db connect` (psql), `db backup` (pg_dump), `db restore` (pg_restore) |
 | **Ambiente** | `environment` (env) → `list`, `switch`, `new`, `delete` |
-| **Configuração** | `variables` (vars) → `list`, `set`, `delete` · `domain` (domains) → `list`, `add`, `delete` |
+| **Configuração** | `variables` (vars/variable) → `list`, `set`, `delete` · `domain` (domains) → `list`, `add`, `delete` |
 | **Utilitário** | `version`, `completion`, `upgrade` |
 
 ## Adicionando Novo Comando
@@ -199,9 +202,13 @@ func init() {
 | `requireAuth()` | `error` | Verifica se há credenciais válidas |
 | `requireProject()` | `(string, error)` | Retorna projectID do config, erro se não linkado |
 | `requireServiceConfig()` | `(string, string, error)` | Retorna `(environmentID, serviceID)`, erro se não configurado |
-| `getEnvironment()` | `string` | Retorna ambiente (flag > config > default) |
+| `resolveServiceContext(serviceRef)` | `(envID, serviceID, error)` | Se `serviceRef` vazio, fallback para `requireServiceConfig`; senão resolve via `ListServices` (match por ID/Name/Slug) usando `resolveEnvironmentID` |
+| `resolveEnvironmentID(client, projectID)` | `(envID, error)` | Resolve envID na ordem: flag `-e` → linked envID → default name |
+| `getEnvironment()` | `string` | Retorna nome de ambiente (flag > config > default) |
 | `getProjectID()` | `string` | Retorna project ID (flag > config > vazio) |
 | `getOutputFormat()` | `string` | Retorna formato (table \| json \| text) |
+
+**Padrão `-s/--service`**: comandos que operam num service (`run`, `shell`, `variables`) aceitam `-s <name|slug|id>` para target ad-hoc, paridade com `railway -s <svc>`. Implementação: chamar `resolveServiceContext(flagValue)` em vez de `requireServiceConfig()`.
 
 ## API Client
 
@@ -209,7 +216,6 @@ func init() {
 
 ```go
 client := api.NewClient()            // Usa credenciais salvas
-client := api.NewClientWithToken(t)   // Token fixo (para testes)
 ```
 
 ### Métodos HTTP
@@ -232,9 +238,9 @@ O `doRequest` intercepta respostas 401 e tenta refresh via `/auth/refresh`. Se o
 
 ```go
 err := client.Get("/path", &result)
-if api.IsNotFound(err) { ... }
-if api.IsUnauthorized(err) { ... }
-if api.IsForbidden(err) { ... }
+if apiErr, ok := err.(*api.APIError); ok {
+    // apiErr.StatusCode, apiErr.Message
+}
 ```
 
 ## Configuração — 3 Camadas
@@ -338,7 +344,7 @@ Para adicionar um novo framework, adicione ao slice `Frameworks` em `internal/de
 - Use `fmt.Errorf("context: %w", err)` para wrap
 - Retorne errors do `RunE`, não faça `os.Exit` nos comandos
 - Use `ui.PrintError()` apenas no root (já feito no `Execute()`)
-- Use helpers `api.IsNotFound()`, `api.IsUnauthorized()` para erros de API
+- Para checar status code da API, type-assert para `*api.APIError`
 
 ### Flags
 - Flags locais no `init()` do arquivo do comando

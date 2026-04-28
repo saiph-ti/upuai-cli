@@ -109,6 +109,16 @@ upuai scale 3
 | `logs` | View service logs |
 | `scale` | Scale service to N replicas |
 | `run` | Run a command with service environment variables injected |
+| `shell` | Open a subshell with service environment variables injected |
+
+### Database
+
+| Command | Description |
+|---------|-------------|
+| `db connect` | Open an interactive `psql` session against the linked database |
+| `db connect --print` | Print the public connection string (script-friendly) |
+| `db backup --out <file>` | `pg_dump` the database via the public endpoint |
+| `db restore -f <file>` | `pg_restore` a dump file via the public endpoint |
 
 ### Environment
 
@@ -129,6 +139,8 @@ upuai scale 3
 | `domain list` | `domains list` | List custom domains |
 | `domain add <domain>` | `domains add` | Add a custom domain |
 | `domain delete <domain-id>` | `domains delete` | Delete a custom domain |
+
+`variables`, `run`, and `shell` accept `-s/--service <name|slug|id>` to target a service other than the linked one (paridade com `railway variable list -s Postgres`).
 
 ### Utility
 
@@ -298,9 +310,38 @@ upuai scale 3               # Scale service to 3 replicas
 ### run
 
 ```bash
-upuai run -- npm start      # Run command with service env vars injected
-upuai run -- python app.py  # Works with any command
+upuai run npm start             # Run command with service env vars injected
+upuai run -- npm start          # Same; "--" is optional
+upuai run -s api -- env         # Target a different service ad-hoc
+upuai run -- python manage.py migrate
 ```
+
+The `--` separator is optional. Use it when your command has flags that conflict with upuai's own (`-s`, `-p`, `-e`, `-o`, `-y`, `-v`).
+
+### shell
+
+```bash
+upuai shell                  # Subshell with env vars from the linked service
+upuai shell -s api           # Subshell scoped to the "api" service
+upuai shell --shell /bin/zsh # Override shell (default: $SHELL or cmd.exe)
+upuai shell --silent         # Suppress the spawn banner
+```
+
+Inside the subshell, run anything that reads env vars: `printenv DATABASE_URL`, `psql "$DATABASE_URL"`, `npm start`, etc. Type `exit` to return.
+
+### db
+
+```bash
+upuai db connect                      # Interactive psql session
+upuai db connect --print              # Print connection string and exit
+upuai db connect --output json        # Emit access info as JSON
+upuai db connect --enable             # Auto-enable public access if disabled
+upuai db backup --out file.dump       # pg_dump → file.dump
+upuai db restore -f file.dump         # pg_restore from file.dump
+upuai db restore -f file.dump -y      # Skip confirmation
+```
+
+`db connect` requires `psql` on `$PATH`; `db backup` / `db restore` require `pg_dump` / `pg_restore` (postgresql-client / libpq). Public access is auto-prompted when disabled — confirm or pass `--enable`.
 
 ### environment
 
@@ -314,9 +355,12 @@ upuai env delete preview    # Delete environment (with confirmation)
 ### variables
 
 ```bash
-upuai vars list                             # List all env vars
+upuai vars list                             # List all env vars (linked service)
+upuai vars list -s Postgres                 # List vars from another service
+upuai vars list --output json               # JSON output (script-friendly)
 upuai vars set KEY=value                    # Set a single variable
 upuai vars set DB_URL=postgres://... PORT=8080  # Set multiple at once
+upuai vars set -s api API_KEY=xxx           # Set on a specific service
 upuai vars delete SECRET_KEY                # Delete a variable
 ```
 
@@ -344,6 +388,32 @@ source <(upuai completion bash)
 ```bash
 upuai upgrade               # Upgrade CLI to latest version
 ```
+
+## Coming from Railway?
+
+Common workflows mapped to `upuai`:
+
+| Railway | Upuai |
+|---|---|
+| `railway login` | `upuai login` |
+| `railway link` | `upuai link` |
+| `railway up` / `railway deploy` | `upuai deploy` (alias `up`) |
+| `railway logs` | `upuai logs` |
+| `railway add --database postgres` | `upuai add` (interactive wizard, type=database) |
+| `railway connect [svc]` (interactive psql) | `upuai db connect` |
+| `railway shell -s <svc>` | `upuai shell -s <svc>` |
+| `railway run <cmd>` | `upuai run <cmd>` |
+| `railway variable list -s <svc>` | `upuai variables list -s <svc>` |
+| `railway variable set KEY=val` | `upuai variables set KEY=val` |
+| `railway variable list -s <svc> --json` | `upuai vars list -s <svc> -o json` |
+| `railway run pg_dump > x.sql` | `upuai db backup --out x.dump` (managed wrapper) |
+| `railway run pg_restore < x.sql` | `upuai db restore -f x.dump` |
+| `railway domain` | `upuai domain` |
+| `railway environment` | `upuai environment` (alias `env`) |
+| `railway redeploy` / `railway down` | `upuai redeploy` / `upuai down` |
+| `railway rollback` | `upuai rollback` |
+
+Out of scope today: `railway ssh` (exec into container) — needs orchestrator endpoint. Managed snapshot create/list/download/restore is dashboard-only on Railway and on Upuai (CNPG runs daily scheduled backups in the cluster; CLI exposure tracked separately).
 
 ## Detected Frameworks
 
