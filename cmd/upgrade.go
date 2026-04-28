@@ -40,7 +40,7 @@ var upgradeCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("failed to check for updates: %w", err)
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != http.StatusOK {
 				return fmt.Errorf("failed to check for updates: HTTP %d", resp.StatusCode)
@@ -89,7 +89,7 @@ var upgradeCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != http.StatusOK {
 				return fmt.Errorf("download failed: HTTP %d", resp.StatusCode)

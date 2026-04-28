@@ -64,7 +64,7 @@ func (t *Table) Render() string {
 			if i > 0 {
 				b.WriteString("  ")
 			}
-			b.WriteString(fmt.Sprintf("%-*s", widths[i], cell))
+			fmt.Fprintf(&b, "%-*s", widths[i], cell)
 		}
 		b.WriteString("\n")
 	}

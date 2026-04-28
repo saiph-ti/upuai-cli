@@ -354,14 +354,15 @@ Examples:
 		}
 
 		fmt.Println()
-		if finalStatus == "RUNNING" {
+		switch finalStatus {
+		case "RUNNING":
 			ui.PrintSuccess(fmt.Sprintf("Stack %s is running", stackName))
-		} else if finalStatus == "PARTIAL" || finalStatus == "FAILED" {
+		case "PARTIAL", "FAILED":
 			ui.PrintError(fmt.Sprintf("Stack %s ended as %s", stackName, finalStatus))
 			if finalFailure != "" {
 				ui.PrintInfo(finalFailure)
 			}
-		} else {
+		default:
 			ui.PrintInfo(fmt.Sprintf("Stack %s is %s (still provisioning)", stackName, finalStatus))
 		}
 		ui.PrintKeyValue("Stack ID", resp.StackID, "Status", finalStatus)

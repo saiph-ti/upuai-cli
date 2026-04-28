@@ -99,7 +99,7 @@ func addToGitignore() {
 	if err != nil {
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if len(data) > 0 && data[len(data)-1] != '\n' {
 		_, _ = f.WriteString("\n")

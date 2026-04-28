@@ -12,15 +12,12 @@ type OutputFormat string
 const (
 	FormatTable OutputFormat = "table"
 	FormatJSON  OutputFormat = "json"
-	FormatText  OutputFormat = "text"
 )
 
 func ParseOutputFormat(s string) OutputFormat {
 	switch strings.ToLower(s) {
 	case "json":
 		return FormatJSON
-	case "text":
-		return FormatText
 	default:
 		return FormatTable
 	}
@@ -30,12 +27,6 @@ func PrintJSON(v any) {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(v)
-}
-
-func PrintText(lines ...string) {
-	for _, line := range lines {
-		fmt.Println(line)
-	}
 }
 
 func PrintKeyValue(pairs ...string) {

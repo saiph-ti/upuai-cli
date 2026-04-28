@@ -21,7 +21,7 @@ func Watch(dir string, debounce time.Duration, callback WatchCallback) error {
 	if err != nil {
 		return err
 	}
-	defer watcher.Close()
+	defer func() { _ = watcher.Close() }()
 
 	if err := addDirRecursive(watcher, dir); err != nil {
 		return err

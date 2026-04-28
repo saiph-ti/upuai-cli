@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 )
 
 type TokenClaims struct {
@@ -37,21 +36,4 @@ func DecodeToken(tokenStr string) (*TokenClaims, error) {
 	}
 
 	return &claims, nil
-}
-
-func IsTokenExpired(tokenStr string) bool {
-	claims, err := DecodeToken(tokenStr)
-	if err != nil {
-		return true
-	}
-	return time.Now().Unix() > claims.Exp
-}
-
-func TokenExpiresIn(tokenStr string) time.Duration {
-	claims, err := DecodeToken(tokenStr)
-	if err != nil {
-		return 0
-	}
-	exp := time.Unix(claims.Exp, 0)
-	return time.Until(exp)
 }

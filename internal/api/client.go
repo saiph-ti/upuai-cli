@@ -28,23 +28,6 @@ func NewClient() *Client {
 	}
 }
 
-func NewClientWithToken(token string) *Client {
-	c := NewClient()
-	c.credStore = nil
-	c.httpClient.Transport = &tokenTransport{token: token, base: http.DefaultTransport}
-	return c
-}
-
-type tokenTransport struct {
-	token string
-	base  http.RoundTripper
-}
-
-func (t *tokenTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	req.Header.Set("Authorization", "Bearer "+t.token)
-	return t.base.RoundTrip(req)
-}
-
 func (c *Client) doRequest(method, path string, body any, result any) error {
 	url := c.baseURL + path
 
@@ -77,7 +60,7 @@ func (c *Client) doRequest(method, path string, body any, result any) error {
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusUnauthorized && c.credStore != nil {
 		if refreshed := c.tryRefreshToken(); refreshed {
@@ -153,7 +136,7 @@ func (c *Client) tryRefreshToken() bool {
 	if err != nil || resp.StatusCode != http.StatusOK {
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var refreshResp struct {
 		Token        string `json:"token"`
@@ -210,7 +193,7 @@ func (c *Client) GetRaw(path string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusUnauthorized && c.credStore != nil {
 		if refreshed := c.tryRefreshToken(); refreshed {

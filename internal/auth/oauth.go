@@ -28,7 +28,7 @@ func StartOAuthFlow(authURL string) (*OAuthResult, error) {
 
 	state, err := generateState()
 	if err != nil {
-		listener.Close()
+		_ = listener.Close()
 		return nil, fmt.Errorf("failed to generate state: %w", err)
 	}
 
@@ -53,7 +53,7 @@ func StartOAuthFlow(authURL string) (*OAuthResult, error) {
 		}
 
 		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, `<!DOCTYPE html><html><body style="font-family:system-ui;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background:#0A0D14;color:#F0F2F5">
+		_, _ = fmt.Fprint(w, `<!DOCTYPE html><html><body style="font-family:system-ui;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background:#0A0D14;color:#F0F2F5">
 			<div style="text-align:center">
 				<h1 style="color:#009C3B">Upuai Cloud</h1>
 				<p>Authentication successful! You can close this window.</p>
@@ -72,7 +72,7 @@ func StartOAuthFlow(authURL string) (*OAuthResult, error) {
 	}()
 
 	if err := browser.OpenURL(fullURL); err != nil {
-		server.Close()
+		_ = server.Close()
 		return nil, fmt.Errorf("failed to open browser: %w\nPlease open this URL manually:\n%s", err, fullURL)
 	}
 

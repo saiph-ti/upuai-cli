@@ -56,11 +56,6 @@ func (c *Client) GetMe() (*MeResponse, error) {
 	return &resp, nil
 }
 
-func (c *Client) ValidateToken() bool {
-	_, err := c.GetMe()
-	return err == nil
-}
-
 type CliSessionRequest struct {
 	SessionToken string `json:"sessionToken"`
 }
