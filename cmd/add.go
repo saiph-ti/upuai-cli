@@ -80,7 +80,10 @@ Examples:
 			var ok bool
 			serviceType, ok = serviceTypeAPIValues[serviceTypeLabel]
 			if !ok {
-				return fmt.Errorf("invalid service type %q — valid types: %v", serviceTypeLabel, serviceTypeLabels)
+				return fmt.Errorf(
+					"invalid service type %q\n  valid types: %v\n  if you expected %q to work, run 'upuai upgrade' — it was added in v0.4.0\n  docs: https://upuai.com.br/docs/upuai-cli",
+					serviceTypeLabel, serviceTypeLabels, serviceTypeLabel,
+				)
 			}
 		}
 

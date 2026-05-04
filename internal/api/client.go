@@ -1,11 +1,14 @@
 package api
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/upuai-cloud/cli/internal/config"
@@ -172,6 +175,65 @@ func (c *Client) Patch(path string, body any, result any) error {
 
 func (c *Client) Delete(path string) error {
 	return c.doRequest(http.MethodDelete, path, nil, nil)
+}
+
+// StreamSSE streams a Server-Sent Events endpoint, invoking onLine for each
+// `data:` line received. The stream ends when the server sends `event: end`
+// or closes the connection. Cancel the context to abort early.
+//
+// Auth: Bearer header (the API's sse-auth.ts also accepts this; ?access_token=
+// is the EventSource fallback for browsers).
+func (c *Client) StreamSSE(ctx context.Context, path string, onLine func(string)) error {
+	url := c.baseURL + path
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("Cache-Control", "no-cache")
+	req.Header.Set("User-Agent", "upuai-cli/"+version.Short())
+
+	token := c.getToken()
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	// SSE streams have no fixed length — bypass the default 30s timeout.
+	streamClient := &http.Client{Timeout: 0}
+	resp, err := streamClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode == http.StatusUnauthorized && c.credStore != nil {
+		if refreshed := c.tryRefreshToken(); refreshed {
+			return c.StreamSSE(ctx, path, onLine)
+		}
+	}
+
+	if resp.StatusCode >= 400 {
+		return c.parseError(resp)
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			continue
+		}
+		// Server signals normal completion with `event: end` followed by `data: ok`.
+		if strings.HasPrefix(line, "event: end") {
+			return nil
+		}
+		if data, ok := strings.CutPrefix(line, "data: "); ok {
+			onLine(data)
+		}
+	}
+	return scanner.Err()
 }
 
 func (c *Client) GetRaw(path string) ([]byte, error) {

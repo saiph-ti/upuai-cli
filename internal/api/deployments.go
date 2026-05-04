@@ -1,6 +1,9 @@
 package api
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
 type DeploymentMeta struct {
 	GitBranch  string `json:"gitBranch,omitempty"`
@@ -81,4 +84,38 @@ func (c *Client) Redeploy(deployID string) (*Deployment, error) {
 
 func (c *Client) RemoveDeployment(deployID string) error {
 	return c.Delete(fmt.Sprintf("/deployments/%s", deployID))
+}
+
+// LatestDeployment returns the most recent deployment for a service in an env,
+// or nil if none exist.
+func (c *Client) LatestDeployment(envID, serviceID string) (*Deployment, error) {
+	deployments, err := c.ListDeployments(envID, serviceID)
+	if err != nil {
+		return nil, err
+	}
+	if len(deployments) == 0 {
+		return nil, nil
+	}
+	return &deployments[0], nil
+}
+
+// StreamBuildLogs streams the build log SSE for a deployment. The server
+// returns the durable log from MinIO when available (terminating with
+// `event: end`); otherwise live-streams from the build Job pod.
+func (c *Client) StreamBuildLogs(ctx context.Context, deployID string, onLine func(string)) error {
+	return c.StreamSSE(ctx, fmt.Sprintf("/deployments/%s/build-logs", deployID), onLine)
+}
+
+// StreamDeployLogs streams the release-phase + rollout log SSE for a deployment.
+func (c *Client) StreamDeployLogs(ctx context.Context, deployID string, onLine func(string)) error {
+	return c.StreamSSE(ctx, fmt.Sprintf("/deployments/%s/deploy-logs", deployID), onLine)
+}
+
+// StreamRuntimeLogs streams runtime logs (live tail) of a service instance.
+func (c *Client) StreamRuntimeLogs(ctx context.Context, envID, serviceID string, onLine func(string)) error {
+	return c.StreamSSE(
+		ctx,
+		fmt.Sprintf("/environments/%s/services/%s/instance/logs/stream", envID, serviceID),
+		onLine,
+	)
 }

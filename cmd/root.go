@@ -2,12 +2,14 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/upuai-cloud/cli/internal/api"
 	"github.com/upuai-cloud/cli/internal/config"
 	"github.com/upuai-cloud/cli/internal/ui"
+	"github.com/upuai-cloud/cli/internal/updatecheck"
 )
 
 var (
@@ -35,11 +37,25 @@ Get started:
 }
 
 func Execute() error {
-	if err := rootCmd.Execute(); err != nil {
-		ui.PrintError(err.Error())
-		return err
+	// Resolve the active subcommand name *before* running, so an error doesn't
+	// prevent us from filtering the update nudge correctly (a 'help' shown
+	// after an unknown flag still returns an error from Execute()).
+	executed, _, _ := rootCmd.Find(os.Args[1:])
+	cmdName := ""
+	if executed != nil {
+		cmdName = executed.Name()
 	}
-	return nil
+
+	err := rootCmd.Execute()
+	if err != nil {
+		ui.PrintError(err.Error())
+	}
+
+	// Update notification runs *after* the user's command — never block their
+	// workflow. Errors inside MaybeNotify are silently swallowed.
+	updatecheck.MaybeNotify(cmdName)
+
+	return err
 }
 
 func init() {

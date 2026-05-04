@@ -24,6 +24,33 @@ type UpdateInstanceRequest struct {
 	Deploy *InstanceDeployConfig `json:"deploy,omitempty"`
 }
 
+// InstanceConfig mirrors the `Service.config` shape returned by the API
+// (see apps/api: ServiceInstance.config — only fields the CLI surfaces).
+type InstanceConfig struct {
+	Source *InstanceSourceConfig `json:"source,omitempty"`
+	Build  *InstanceBuildConfig  `json:"build,omitempty"`
+	Deploy *InstanceDeployConfig `json:"deploy,omitempty"`
+}
+
+type Instance struct {
+	ID            string          `json:"id"`
+	ServiceID     string          `json:"serviceId"`
+	EnvironmentID string          `json:"environmentId"`
+	Name          string          `json:"name,omitempty"`
+	Type          string          `json:"type,omitempty"`
+	Status        string          `json:"status,omitempty"`
+	Config        *InstanceConfig `json:"config,omitempty"`
+}
+
+func (c *Client) GetInstance(envID, serviceID string) (*Instance, error) {
+	var inst Instance
+	err := c.Get(fmt.Sprintf("/environments/%s/services/%s/instance", envID, serviceID), &inst)
+	if err != nil {
+		return nil, err
+	}
+	return &inst, nil
+}
+
 func (c *Client) UpdateInstance(envID, serviceID string, req *UpdateInstanceRequest) error {
 	return c.Patch(fmt.Sprintf("/environments/%s/services/%s/instance", envID, serviceID), req, nil)
 }
