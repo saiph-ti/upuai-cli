@@ -18,6 +18,7 @@ var (
 	logsDeploy       bool
 	logsFollow       bool
 	logsDeploymentID string
+	logsServiceRef   string
 )
 
 var logsCmd = &cobra.Command{
@@ -57,7 +58,7 @@ Examples:
 }
 
 func runRuntimeLogs(client *api.Client) error {
-	envID, serviceID, err := requireServiceConfig()
+	envID, serviceID, err := resolveServiceContext(logsServiceRef)
 	if err != nil {
 		return err
 	}
@@ -93,7 +94,7 @@ func runRuntimeLogs(client *api.Client) error {
 func runDeploymentLogs(client *api.Client) error {
 	deployID := logsDeploymentID
 	if deployID == "" {
-		envID, serviceID, err := requireServiceConfig()
+		envID, serviceID, err := resolveServiceContext(logsServiceRef)
 		if err != nil {
 			return err
 		}
@@ -144,5 +145,6 @@ func init() {
 	logsCmd.Flags().BoolVar(&logsDeploy, "deploy", false, "Show the release-phase + rollout log of a deployment")
 	logsCmd.Flags().BoolVarP(&logsFollow, "follow", "f", false, "Stream runtime logs (live tail via SSE)")
 	logsCmd.Flags().StringVarP(&logsDeploymentID, "deployment", "d", "", "Specific deployment ID (default: latest)")
+	logsCmd.Flags().StringVarP(&logsServiceRef, "service", "s", "", "Service ref (name|slug|id) — overrides linked service")
 	rootCmd.AddCommand(logsCmd)
 }
