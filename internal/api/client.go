@@ -98,8 +98,9 @@ func (c *Client) parseError(resp *http.Response) error {
 	}
 	if len(body) > 0 {
 		var parsed struct {
-			Message string `json:"message"`
-			Error   string `json:"error"`
+			Message   string `json:"message"`
+			Error     string `json:"error"`
+			RequestID string `json:"requestId"`
 		}
 		if json.Unmarshal(body, &parsed) == nil {
 			if parsed.Message != "" {
@@ -107,6 +108,7 @@ func (c *Client) parseError(resp *http.Response) error {
 			} else if parsed.Error != "" {
 				apiErr.Message = parsed.Error
 			}
+			apiErr.RequestID = parsed.RequestID
 		}
 	}
 	return apiErr
