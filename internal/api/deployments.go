@@ -119,3 +119,115 @@ func (c *Client) StreamRuntimeLogs(ctx context.Context, envID, serviceID string,
 		onLine,
 	)
 }
+
+// DeploymentTimelineEnvelope mirrors orchestratorv1.GetDeploymentTimelineResponse.
+// Decoded shape from GET /deployments/{id}/timeline. Stack-agnostic — fields
+// reflect buildkit grammar / build script tags / K8s objects. The CLI
+// renders selected pieces; full schema lives in
+// proto/orchestrator/v1/timeline.proto.
+type DeploymentTimelineEnvelope struct {
+	Timeline *DeploymentTimeline `json:"timeline"`
+}
+
+type DeploymentTimeline struct {
+	DeploymentID   string                  `json:"deploymentId"`
+	Status         string                  `json:"status"`
+	StartedAt      string                  `json:"startedAt"`
+	FinishedAt     string                  `json:"finishedAt"`
+	FailureSummary *TimelineFailureSummary `json:"failureSummary,omitempty"`
+	Stages         []TimelineStage         `json:"stages,omitempty"`
+	Partial        bool                    `json:"partial"`
+}
+
+type TimelineFailureSummary struct {
+	Stage     string   `json:"stage"`
+	Step      string   `json:"step"`
+	ExitCode  *int32   `json:"exitCode,omitempty"`
+	LastLines []string `json:"lastLines,omitempty"`
+}
+
+type TimelineStage struct {
+	Kind       string            `json:"kind"`
+	Status     string            `json:"status"`
+	StartedAt  string            `json:"startedAt"`
+	FinishedAt string            `json:"finishedAt"`
+	DurationMs int64             `json:"durationMs"`
+	Partial    bool              `json:"partial"`
+	GitClone   *TimelineGitClone `json:"gitClone,omitempty"`
+	Build      *TimelineBuild    `json:"build,omitempty"`
+	Release    *TimelineRelease  `json:"release,omitempty"`
+	Deploy     *TimelineDeploy   `json:"deploy,omitempty"`
+}
+
+type TimelineGitClone struct {
+	ExitCode           *int32   `json:"exitCode,omitempty"`
+	TerminationReason  string   `json:"terminationReason"`
+	TerminationMessage string   `json:"terminationMessage"`
+	LogTail            []string `json:"logTail,omitempty"`
+}
+
+type TimelineBuild struct {
+	Builder       string                 `json:"builder"`
+	Detected      *TimelineDetected      `json:"detected,omitempty"`
+	BuildkitSteps []TimelineBuildkitStep `json:"buildkitSteps,omitempty"`
+	ExitCode      *int32                 `json:"exitCode,omitempty"`
+}
+
+type TimelineDetected struct {
+	Language       string `json:"language"`
+	Framework      string `json:"framework"`
+	Port           *int32 `json:"port,omitempty"`
+	ReleaseCommand string `json:"releaseCommand"`
+	DockerfilePath string `json:"dockerfilePath"`
+	JdkVersion     string `json:"jdkVersion"`
+}
+
+type TimelineBuildkitStep struct {
+	ID         string   `json:"id"`
+	Name       string   `json:"name"`
+	Status     string   `json:"status"`
+	DurationMs int64    `json:"durationMs"`
+	ExitCode   *int32   `json:"exitCode,omitempty"`
+	LastLines  []string `json:"lastLines,omitempty"`
+}
+
+type TimelineRelease struct {
+	Command  string   `json:"command"`
+	ExitCode *int32   `json:"exitCode,omitempty"`
+	LogTail  []string `json:"logTail,omitempty"`
+}
+
+type TimelineDeploy struct {
+	RolloutPhase string        `json:"rolloutPhase"`
+	Pods         []TimelinePod `json:"pods,omitempty"`
+}
+
+type TimelinePod struct {
+	Name       string              `json:"name"`
+	Phase      string              `json:"phase"`
+	Containers []TimelineContainer `json:"containers,omitempty"`
+}
+
+type TimelineContainer struct {
+	Name            string               `json:"name"`
+	Ready           bool                 `json:"ready"`
+	RestartCount    int32                `json:"restartCount"`
+	LastTermination *TimelineTermination `json:"lastTermination,omitempty"`
+}
+
+type TimelineTermination struct {
+	ExitCode int32  `json:"exitCode"`
+	Reason   string `json:"reason"`
+	Message  string `json:"message"`
+}
+
+// GetDeploymentTimeline fetches the structured timeline for a deployment.
+// Stack-agnostic projection composed by the orchestrator from buildkit/k8s
+// signals. See runbook 2026-05-05-deployment-timeline.md.
+func (c *Client) GetDeploymentTimeline(deployID string) (*DeploymentTimeline, error) {
+	var env DeploymentTimelineEnvelope
+	if err := c.Get(fmt.Sprintf("/deployments/%s/timeline", deployID), &env); err != nil {
+		return nil, err
+	}
+	return env.Timeline, nil
+}

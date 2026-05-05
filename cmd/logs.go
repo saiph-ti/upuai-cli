@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/upuai-cloud/cli/internal/api"
@@ -17,6 +19,7 @@ var (
 	logsBuild        bool
 	logsDeploy       bool
 	logsFollow       bool
+	logsTimeline     bool
 	logsDeploymentID string
 	logsServiceRef   string
 )
@@ -50,6 +53,9 @@ Examples:
 
 		client := api.NewClient()
 
+		if logsTimeline {
+			return runTimeline(client)
+		}
 		if logsBuild || logsDeploy {
 			return runDeploymentLogs(client)
 		}
@@ -139,11 +145,150 @@ func signalCtx() (context.Context, context.CancelFunc) {
 	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 }
 
+// runTimeline renders the structured DeploymentTimeline for the latest (or
+// --deployment) deploy. Stack-agnostic — the platform projection works
+// identically for any framework. Combined with -f, polls every 2s while the
+// deployment is in-progress; bails out once status reaches a terminal value.
+//
+// See runbook 2026-05-05-deployment-timeline.md for the canonical schema.
+func runTimeline(client *api.Client) error {
+	deployID := logsDeploymentID
+	if deployID == "" {
+		envID, serviceID, err := resolveServiceContext(logsServiceRef)
+		if err != nil {
+			return err
+		}
+		var latest *api.Deployment
+		err = ui.RunWithSpinner("Resolving latest deployment...", func() error {
+			var lerr error
+			latest, lerr = client.LatestDeployment(envID, serviceID)
+			return lerr
+		})
+		if err != nil {
+			return fmt.Errorf("failed to find latest deployment: %w", err)
+		}
+		if latest == nil {
+			ui.PrintInfo("No deployments yet for this service")
+			return nil
+		}
+		deployID = latest.ID
+	}
+
+	terminal := map[string]bool{
+		"DEPLOYMENT_STATUS_LIVE":      true,
+		"DEPLOYMENT_STATUS_FAILED":    true,
+		"DEPLOYMENT_STATUS_CANCELLED": true,
+	}
+
+	for {
+		tl, err := client.GetDeploymentTimeline(deployID)
+		if err != nil {
+			return fmt.Errorf("failed to fetch timeline: %w", err)
+		}
+		if tl == nil {
+			ui.PrintInfo("Timeline not available yet")
+			if !logsFollow {
+				return nil
+			}
+			time.Sleep(2 * time.Second)
+			continue
+		}
+
+		printTimeline(tl)
+
+		if !logsFollow || terminal[tl.Status] {
+			return nil
+		}
+		time.Sleep(2 * time.Second)
+	}
+}
+
+// printTimeline renders the structured timeline to stdout. Plain text with
+// minimal coloring for terminal-friendliness; never tries to interpret log
+// content (last_lines printed verbatim).
+func printTimeline(tl *api.DeploymentTimeline) {
+	fmt.Println()
+	ui.PrintKeyValue("Deployment", tl.DeploymentID)
+	ui.PrintKeyValue("Status", strings.TrimPrefix(tl.Status, "DEPLOYMENT_STATUS_"))
+	if tl.Partial {
+		ui.PrintWarning("Partial timeline — some sources unavailable")
+	}
+
+	if tl.FailureSummary != nil && len(tl.FailureSummary.LastLines) > 0 {
+		fmt.Println()
+		header := fmt.Sprintf("✗ %s — %s",
+			strings.TrimPrefix(tl.FailureSummary.Stage, "STAGE_KIND_"),
+			tl.FailureSummary.Step)
+		if tl.FailureSummary.ExitCode != nil {
+			header += fmt.Sprintf(" (exit %d)", *tl.FailureSummary.ExitCode)
+		}
+		fmt.Println(ui.Error.Render(header))
+		for _, line := range tl.FailureSummary.LastLines {
+			fmt.Println("  " + line)
+		}
+	}
+
+	for _, st := range tl.Stages {
+		fmt.Println()
+		kind := strings.TrimPrefix(st.Kind, "STAGE_KIND_")
+		status := strings.TrimPrefix(st.Status, "STAGE_STATUS_")
+		dur := ""
+		if st.DurationMs > 0 {
+			dur = fmt.Sprintf(" %.1fs", float64(st.DurationMs)/1000.0)
+		}
+		fmt.Printf("[%s] %s%s\n", status, kind, dur)
+
+		if st.Build != nil {
+			if st.Build.Builder != "" {
+				fmt.Printf("  builder: %s\n", st.Build.Builder)
+			}
+			if st.Build.Detected != nil {
+				if st.Build.Detected.Language != "" || st.Build.Detected.Framework != "" {
+					fmt.Printf("  detected: %s / %s\n",
+						st.Build.Detected.Language, st.Build.Detected.Framework)
+				}
+			}
+			for _, bs := range st.Build.BuildkitSteps {
+				bstatus := strings.TrimPrefix(bs.Status, "BUILDKIT_STEP_STATUS_")
+				bdur := ""
+				if bs.DurationMs > 0 {
+					bdur = fmt.Sprintf(" %.1fs", float64(bs.DurationMs)/1000.0)
+				}
+				name := bs.Name
+				if len(name) > 80 {
+					name = name[:77] + "..."
+				}
+				fmt.Printf("    %s [%s] %s%s\n", bs.ID, bstatus, name, bdur)
+			}
+		}
+		if st.Deploy != nil && len(st.Deploy.Pods) > 0 {
+			fmt.Printf("  rollout: %s\n", strings.TrimPrefix(st.Deploy.RolloutPhase, "ROLLOUT_PHASE_"))
+			for _, p := range st.Deploy.Pods {
+				fmt.Printf("    pod %s (%s)\n", p.Name, p.Phase)
+				for _, c := range p.Containers {
+					line := fmt.Sprintf("      %s ready=%t restarts=%d", c.Name, c.Ready, c.RestartCount)
+					if c.LastTermination != nil {
+						line += fmt.Sprintf(" · %s exit=%d",
+							c.LastTermination.Reason, c.LastTermination.ExitCode)
+					}
+					fmt.Println(line)
+				}
+			}
+		}
+		if st.GitClone != nil && st.Status == "STAGE_STATUS_FAILED" {
+			if st.GitClone.TerminationMessage != "" {
+				fmt.Printf("  message: %s\n", st.GitClone.TerminationMessage)
+			}
+		}
+	}
+}
+
 func init() {
 	logsCmd.Flags().IntVarP(&logsLines, "lines", "n", 100, "Number of log lines to fetch (runtime only)")
 	logsCmd.Flags().BoolVar(&logsBuild, "build", false, "Show the build log of a deployment")
 	logsCmd.Flags().BoolVar(&logsDeploy, "deploy", false, "Show the release-phase + rollout log of a deployment")
-	logsCmd.Flags().BoolVarP(&logsFollow, "follow", "f", false, "Stream runtime logs (live tail via SSE)")
+	logsCmd.Flags().BoolVar(&logsTimeline, "timeline", false, "Show the structured deployment timeline (stack-agnostic stage/step view + failure summary)")
+	logsCmd.Flags().BoolVarP(&logsFollow, "follow", "f", false, "Stream runtime logs (live tail via SSE), or poll timeline every 2s with --timeline")
 	logsCmd.Flags().StringVarP(&logsDeploymentID, "deployment", "d", "", "Specific deployment ID (default: latest)")
 	logsCmd.Flags().StringVarP(&logsServiceRef, "service", "s", "", "Service ref (name|slug|id) — overrides linked service")
 	rootCmd.AddCommand(logsCmd)
