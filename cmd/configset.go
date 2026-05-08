@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/upuai-cloud/cli/internal/api"
 	"github.com/upuai-cloud/cli/internal/config"
+	"github.com/upuai-cloud/cli/internal/git"
 	"github.com/upuai-cloud/cli/internal/ui"
 )
 
@@ -49,7 +50,7 @@ Examples:
 
 		req := &api.UpdateInstanceRequest{}
 		if hasSource {
-			req.Source = &api.InstanceSourceConfig{RootDirectory: flagConfigRootDir}
+			req.Source = &api.InstanceSourceConfig{RootDirectory: git.NormalizeRootDir(flagConfigRootDir)}
 		}
 		if hasBuild {
 			req.Build = &api.InstanceBuildConfig{

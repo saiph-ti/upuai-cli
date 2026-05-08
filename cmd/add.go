@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/upuai-cloud/cli/internal/api"
 	"github.com/upuai-cloud/cli/internal/config"
+	"github.com/upuai-cloud/cli/internal/git"
 	"github.com/upuai-cloud/cli/internal/ui"
 )
 
@@ -50,7 +51,7 @@ var addCmd = &cobra.Command{
 Examples:
   upuai add
   upuai add --type database --name postgres
-  upuai add --type github --name api --repo https://github.com/org/repo --branch main
+  upuai add --type github --name api --repo org/repo --branch main
   upuai add --type github --name api --repo https://github.com/org/monorepo --root-dir apps/api --builder dockerfile --dockerfile-path apps/api/Dockerfile`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := requireAuth(); err != nil {
@@ -147,24 +148,31 @@ Examples:
 			return nil
 		}
 
-		// Resolve source and override type if --image or --repo provided
+		// Resolve source and override type if --image or --repo provided.
+		// --repo is normalized to "owner/repo" before sending — the API rejects
+		// URLs and the UI dialog assumes that exact format. See runbook
+		// 2026-05-08-cli-source-normalization.md.
 		var source *api.ServiceSourceConfig
 		if flagAddImage != "" {
 			serviceType = "docker_image"
 			source = &api.ServiceSourceConfig{Image: flagAddImage}
 		} else if flagAddRepo != "" {
+			repo, parseErr := git.ParseRepo(flagAddRepo)
+			if parseErr != nil {
+				return fmt.Errorf("--repo: %w", parseErr)
+			}
 			serviceType = "github"
 			branch := flagAddBranch
 			if branch == "" {
 				branch = "main"
 			}
 			source = &api.ServiceSourceConfig{
-				Repo:          flagAddRepo,
+				Repo:          repo,
 				Branch:        branch,
-				RootDirectory: flagAddRootDir,
+				RootDirectory: git.NormalizeRootDir(flagAddRootDir),
 			}
 		} else if flagAddRootDir != "" {
-			source = &api.ServiceSourceConfig{RootDirectory: flagAddRootDir}
+			source = &api.ServiceSourceConfig{RootDirectory: git.NormalizeRootDir(flagAddRootDir)}
 		}
 
 		var service *api.AppService
@@ -240,7 +248,7 @@ func init() {
 	addCmd.Flags().StringVar(&flagAddType, "type", "", "Service type: app, bucket, database, docker, docker image, function, github, gitlab")
 	addCmd.Flags().StringVar(&flagAddName, "name", "", "Service name (skips prompt)")
 	addCmd.Flags().StringVar(&flagAddImage, "image", "", "Docker image to deploy (e.g. nginx:latest) — sets type to docker_image")
-	addCmd.Flags().StringVar(&flagAddRepo, "repo", "", "GitHub repo URL — sets type to github")
+	addCmd.Flags().StringVar(&flagAddRepo, "repo", "", "GitHub repo as 'owner/repo' (URLs aceitas e normalizadas) — sets type to github")
 	addCmd.Flags().StringVar(&flagAddBranch, "branch", "main", "Git branch (used with --repo, default: main)")
 	addCmd.Flags().StringVar(&flagAddRootDir, "root-dir", "", "Root directory within the repo (for monorepos, e.g. apps/api)")
 	addCmd.Flags().StringVar(&flagAddBuilder, "builder", "", "Build system: dockerfile or railpack")
