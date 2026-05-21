@@ -81,10 +81,15 @@ func (s *CredentialStore) Exists() bool {
 	return err == nil
 }
 
+// GetToken returns the JWT to use as Bearer auth. Source of truth is the
+// credential store (`~/.upuai/credentials.json`), populated by `upuai login`
+// and auto-rotated on 401 by the API client's refresh path. There is no env
+// var fallback — the previous `UPUAI_TOKEN` env shortcut was removed on
+// 2026-05-21 because the JWT TTL (2h) plus the refresh requiring the
+// refresh token from credentials.json made headless usage break silently
+// in any CI job longer than the access token lifetime. See runbook
+// upuai-core/docs/runbooks/2026-05-21-ai-deploy-skill.md (round 2).
 func (s *CredentialStore) GetToken() string {
-	if token := os.Getenv("UPUAI_TOKEN"); token != "" {
-		return token
-	}
 	creds, err := s.Load()
 	if err != nil || creds == nil {
 		return ""

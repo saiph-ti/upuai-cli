@@ -43,30 +43,35 @@ upuai version
 ## Quick Start
 
 ```bash
-# 1. Authenticate
+# 1. Authenticate (browser OAuth or email OTP — required once per machine)
 upuai login
 
-# 2. Initialize project (auto-detects framework)
-upuai init
+# 2. Create the project + a github-backed service in one shot, then deploy.
+upuai init --name my-app --repo myorg/my-app --framework "Next.js" --yes
+upuai deploy --wait --yes
 
-# 3. Deploy
-upuai deploy
+# That's it — `--wait` blocks until the deployment hits a terminal status
+# and exits non-zero on failure. Skip --wait for the legacy fire-and-forget
+# behaviour.
 
-# 4. Check status
-upuai status
-
-# 5. View logs
-upuai logs
-
-# 6. Set environment variables
+# Day-2 ops:
+upuai status                  # project + service state
+upuai logs -n 100             # service logs
 upuai vars set DATABASE_URL=postgres://... SECRET_KEY=abc123
-
-# 7. Add a custom domain
 upuai domains add myapp.example.com
-
-# 8. Scale your service
 upuai scale 3
+upuai rollback --list         # rollback to a previous deploy
 ```
+
+### Use with AI agents
+
+Install the upuai skill into Claude Code, Cursor, Codex CLI, Windsurf, or any other agent supported by [vercel-labs/skills](https://github.com/vercel-labs/skills) (55+ agents):
+
+```bash
+npx skills add saiph-ti/upuai-cli --skill upuai
+```
+
+Then ask the agent in natural language: *"deploy this to upuai"*. Full guide and a deep-link for `claude.ai` / `chatgpt.com` (no install): https://upuai.com.br/docs/ai-deploy.
 
 ## Commands
 
@@ -172,13 +177,7 @@ upuai login
 upuai login --email
 ```
 
-Credentials are stored in `~/.upuai/credentials.json` (file permissions `0600`). Tokens are automatically refreshed on 401 responses.
-
-You can also authenticate via environment variable:
-
-```bash
-export UPUAI_TOKEN=<your-token>
-```
+Credentials are stored in `~/.upuai/credentials.json` (file permissions `0600`). Tokens are automatically refreshed on 401 responses. Interactive `upuai login` is the only supported auth flow — same pattern as `railway login`, `vercel login`, `fly auth login`.
 
 ## Configuration
 
@@ -211,18 +210,44 @@ All settings can be overridden with `UPUAI_` prefix:
 
 | Variable | Description |
 |----------|-------------|
-| `UPUAI_API_URL` | API base URL |
-| `UPUAI_TOKEN` | Authentication token (skips credential store) |
+| `UPUAI_API_URL` | API base URL (overrides config) |
+| `UPUAI_WEB_URL` | Web dashboard URL (overrides config) |
+| `UPUAI_DISABLE_UPDATE_CHECK` | Set to `1` to suppress the periodic "new version available" nudge (useful in CI/agent contexts) |
 
 ## Command Details
+
+### init
+
+```bash
+upuai init                                                          # interactive wizard
+upuai init --name my-app --framework "Next.js" --yes                # CLI-only, empty service (attach source later)
+upuai init --name my-app --repo myorg/my-app --yes                  # github service ready to deploy
+upuai init --name api --repo myorg/monorepo --root-dir apps/api --branch main --yes
+upuai init --name web --image nginx:1.27 --yes                      # docker_image service
+```
+
+Flag reference:
+- `--name` — kebab-case project slug. Required when `--yes` is set.
+- `--framework` — one of `Next.js`, `Vite`, `React`, `Node.js`, `Go`, `Django`, `Flask`, `Python`, `Rails`, `Docker`, `Static`. Required when `--yes` is set and the CLI cannot auto-detect.
+- `--repo` — `owner/repo` (URLs accepted and normalized). Creates a `github`-type service with source. Mutually exclusive with `--image`.
+- `--branch` — git branch (default `main`).
+- `--root-dir` — subdirectory within the repo for monorepos.
+- `--image` — Docker image reference. Creates a `docker_image`-type service.
+
+Without `--repo` / `--image`, the service is type `empty` and cannot be deployed until you attach a source via `upuai add --type github ...` or the dashboard.
 
 ### deploy
 
 ```bash
-upuai deploy              # Deploy to default environment
-upuai deploy -e production # Deploy to production
-upuai deploy --watch      # Watch for file changes and auto-redeploy
+upuai deploy                          # Deploy to default environment (fire-and-forget)
+upuai deploy -e production            # Deploy to production
+upuai deploy --wait                   # Block until terminal status (success/failed/...)
+upuai deploy --wait --wait-timeout 600 # Wait up to 10 minutes (default 300 s)
+upuai deploy --wait -o json           # JSON-printed final Deployment object
+upuai deploy --watch                  # Watch for file changes and auto-redeploy
 ```
+
+`--wait` polls every 3 s. Exit code is non-zero on `failed` / `cancelled` / `build_failed`.
 
 ### redeploy
 

@@ -53,7 +53,7 @@ cli/
 │   │   └── token.go           # Decode JWT, verificação de expiração
 │   ├── config/
 │   │   ├── global.go          # Config global (~/.upuai/config.json), Viper, env vars (UPUAI_)
-│   │   ├── credentials.go     # CredentialStore (~/.upuai/credentials.json), UPUAI_TOKEN
+│   │   ├── credentials.go     # CredentialStore (~/.upuai/credentials.json) — fonte única de auth (login interativo)
 │   │   └── project.go         # ProjectConfig (.upuai/config.json), auto-gitignore
 │   ├── detect/
 │   │   ├── frameworks.go      # Lista de 11 frameworks suportados
