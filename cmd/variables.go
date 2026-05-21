@@ -2,10 +2,10 @@ package cmd
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/upuai-cloud/cli/internal/api"
+	"github.com/upuai-cloud/cli/internal/envparse"
 	"github.com/upuai-cloud/cli/internal/ui"
 )
 
@@ -96,14 +96,19 @@ var variablesSetCmd = &cobra.Command{
 		}
 
 		var vars []api.VariableInput
+		seen := map[string]int{}
 		for _, arg := range args {
-			parts := strings.SplitN(arg, "=", 2)
-			if len(parts) != 2 {
+			parsed, ok := envparse.ParseSingle(arg)
+			if !ok {
 				return fmt.Errorf("invalid format %q — use KEY=VALUE", arg)
 			}
+			if prev, dup := seen[parsed.Key]; dup {
+				return fmt.Errorf("duplicate key %q (already set at arg %d)", parsed.Key, prev+1)
+			}
+			seen[parsed.Key] = len(vars)
 			vars = append(vars, api.VariableInput{
-				Key:   parts[0],
-				Value: parts[1],
+				Key:   parsed.Key,
+				Value: parsed.Value,
 			})
 		}
 
