@@ -125,8 +125,11 @@ If public access is disabled, you'll be asked to enable it first.`,
 		if err := runLibpqTool("pg_dump", c); err != nil {
 			return err
 		}
-		fi, _ := os.Stat(dbBackupOut)
-		ui.PrintSuccess(fmt.Sprintf("backup written: %s (%d bytes)", dbBackupOut, fi.Size()))
+		if fi, statErr := os.Stat(dbBackupOut); statErr == nil {
+			ui.PrintSuccess(fmt.Sprintf("backup written: %s (%d bytes)", dbBackupOut, fi.Size()))
+		} else {
+			ui.PrintSuccess(fmt.Sprintf("backup written: %s", dbBackupOut))
+		}
 		return nil
 	},
 }

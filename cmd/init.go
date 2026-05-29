@@ -113,7 +113,7 @@ Examples:
 		serviceType := "empty"
 		var serviceSource *api.ServiceSourceConfig
 		if flagInitRepo != "" {
-			repo, parseErr := git.ParseRepo(flagInitRepo)
+			repo, detected, parseErr := git.ParseRepoWithProvider(flagInitRepo)
 			if parseErr != nil {
 				return fmt.Errorf("--repo: %w", parseErr)
 			}
@@ -121,7 +121,13 @@ Examples:
 			if branch == "" {
 				branch = "main"
 			}
-			serviceType = "github"
+			// Provider detectado pelo host (github.com/gitlab.com); shorthand
+			// owner/repo sem host cai no default github. init não tem --type.
+			provider, resolveErr := git.ResolveProvider("", detected)
+			if resolveErr != nil {
+				return fmt.Errorf("--repo: %w", resolveErr)
+			}
+			serviceType = provider
 			serviceSource = &api.ServiceSourceConfig{
 				Repo:          repo,
 				Branch:        branch,
@@ -266,7 +272,7 @@ Examples:
 func init() {
 	initCmd.Flags().StringVar(&flagInitName, "name", "", "Project name (skips prompt)")
 	initCmd.Flags().StringVar(&flagInitFramework, "framework", "", "Framework name (skips detection)")
-	initCmd.Flags().StringVar(&flagInitRepo, "repo", "", "GitHub repo as 'owner/repo' (URLs aceitas e normalizadas) — creates a github-type service ready to deploy")
+	initCmd.Flags().StringVar(&flagInitRepo, "repo", "", "Git repo as 'owner/repo' ou URL (github.com/gitlab.com) — o tipo é detectado pelo host")
 	initCmd.Flags().StringVar(&flagInitBranch, "branch", "", "Git branch (used with --repo, default: main)")
 	initCmd.Flags().StringVar(&flagInitRootDir, "root-dir", "", "Root directory within the repo (for monorepos, e.g. apps/api)")
 	initCmd.Flags().StringVar(&flagInitImage, "image", "", "Docker image to deploy (e.g. nginx:1.27) — creates a docker_image-type service; mutually exclusive with --repo")

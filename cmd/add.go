@@ -41,6 +41,9 @@ var (
 	flagAddStartCommand       string
 	flagAddHealthCheck        string
 	flagAddHealthCheckTimeout int
+	flagAddRegistryUser       string
+	flagAddRegistryPassword   string
+	flagAddRegistryHost       string
 )
 
 var addCmd = &cobra.Command{
@@ -156,12 +159,29 @@ Examples:
 		if flagAddImage != "" {
 			serviceType = "docker_image"
 			source = &api.ServiceSourceConfig{Image: flagAddImage}
+			// Credencial de registry privado é opcional, mas se vier a password,
+			// o user também precisa (paridade com o magic env-var da plataforma).
+			if (flagAddRegistryUser != "") != (flagAddRegistryPassword != "") {
+				return fmt.Errorf("--registry-user e --registry-password devem ser usados juntos")
+			}
 		} else if flagAddRepo != "" {
-			repo, parseErr := git.ParseRepo(flagAddRepo)
+			repo, detected, parseErr := git.ParseRepoWithProvider(flagAddRepo)
 			if parseErr != nil {
 				return fmt.Errorf("--repo: %w", parseErr)
 			}
-			serviceType = "github"
+			// --type, quando dado, precisa ser github|gitlab pra combinar com --repo.
+			explicit := ""
+			if flagAddType != "" {
+				if serviceType != "github" && serviceType != "gitlab" {
+					return fmt.Errorf("--type %s não combina com --repo (use --type github|gitlab ou omita)", flagAddType)
+				}
+				explicit = serviceType
+			}
+			provider, resolveErr := git.ResolveProvider(explicit, detected)
+			if resolveErr != nil {
+				return fmt.Errorf("--repo: %w", resolveErr)
+			}
+			serviceType = provider
 			branch := flagAddBranch
 			if branch == "" {
 				branch = "main"
@@ -188,6 +208,27 @@ Examples:
 		})
 		if err != nil {
 			return fmt.Errorf("failed to create service: %w", err)
+		}
+
+		// Credencial de registry privado (imagem privada): grava as env vars
+		// mágicas que a plataforma consome (DOCKER_REGISTRY_*) e marca a senha
+		// como secret. A API as converte em imagePullSecret e as remove do
+		// runtime do container (não vazam). Paridade Railway.
+		if flagAddImage != "" && flagAddRegistryUser != "" && flagAddRegistryPassword != "" {
+			vars := []api.VariableInput{
+				{Key: "DOCKER_REGISTRY_USERNAME", Value: flagAddRegistryUser},
+				{Key: "DOCKER_REGISTRY_PASSWORD", Value: flagAddRegistryPassword, IsSecret: true},
+			}
+			if flagAddRegistryHost != "" {
+				vars = append(vars, api.VariableInput{Key: "DOCKER_REGISTRY_HOST", Value: flagAddRegistryHost})
+			}
+			err = ui.RunWithSpinner("Setting registry credentials...", func() error {
+				_, setErr := client.SetVariables(cfg.EnvironmentID, service.ID, vars)
+				return setErr
+			})
+			if err != nil {
+				ui.PrintWarning(fmt.Sprintf("Service created but registry credentials failed: %v", err))
+			}
 		}
 
 		// Apply build/deploy config if any flags were provided
@@ -248,7 +289,7 @@ func init() {
 	addCmd.Flags().StringVar(&flagAddType, "type", "", "Service type: app, bucket, database, docker, docker image, function, github, gitlab")
 	addCmd.Flags().StringVar(&flagAddName, "name", "", "Service name (skips prompt)")
 	addCmd.Flags().StringVar(&flagAddImage, "image", "", "Docker image to deploy (e.g. nginx:latest) — sets type to docker_image")
-	addCmd.Flags().StringVar(&flagAddRepo, "repo", "", "GitHub repo as 'owner/repo' (URLs aceitas e normalizadas) — sets type to github")
+	addCmd.Flags().StringVar(&flagAddRepo, "repo", "", "Git repo as 'owner/repo' ou URL (github.com/gitlab.com) — o tipo é detectado pelo host; --type força github|gitlab")
 	addCmd.Flags().StringVar(&flagAddBranch, "branch", "main", "Git branch (used with --repo, default: main)")
 	addCmd.Flags().StringVar(&flagAddRootDir, "root-dir", "", "Root directory within the repo (for monorepos, e.g. apps/api)")
 	addCmd.Flags().StringVar(&flagAddBuilder, "builder", "", "Build system: dockerfile or railpack")
@@ -256,5 +297,8 @@ func init() {
 	addCmd.Flags().StringVar(&flagAddStartCommand, "start-command", "", "Command to start the service")
 	addCmd.Flags().StringVar(&flagAddHealthCheck, "health-check", "", "HTTP path for health check (e.g. /health)")
 	addCmd.Flags().IntVar(&flagAddHealthCheckTimeout, "health-check-timeout", 0, "Initial delay in seconds before health checks start (default 5)")
+	addCmd.Flags().StringVar(&flagAddRegistryUser, "registry-user", "", "Usuário do registry privado (com --image, imagem privada)")
+	addCmd.Flags().StringVar(&flagAddRegistryPassword, "registry-password", "", "Senha/token do registry privado (armazenada como secret)")
+	addCmd.Flags().StringVar(&flagAddRegistryHost, "registry-host", "", "Host do registry (ex: ghcr.io); inferido da imagem se omitido")
 	rootCmd.AddCommand(addCmd)
 }

@@ -39,9 +39,8 @@ var failedDeployStatuses = map[string]struct{}{
 }
 
 var deployCmd = &cobra.Command{
-	Use:     "deploy",
-	Aliases: []string{"up"},
-	Short:   "Deploy the current project",
+	Use:   "deploy",
+	Short: "Deploy the current project (git-connected source)",
 	Long: `Deploy the current project to Upuai Cloud.
 
 Triggers a new deployment for the linked project. By default the command
@@ -109,6 +108,13 @@ func runDeploy(projectID, env, serviceID string) error {
 		}
 		deployment = final
 		if _, isFail := failedDeployStatuses[strings.ToLower(deployment.Status)]; isFail {
+			// Surface a mensagem acionável da API (failureSummary) — ex: repo
+			// privado sem credencial git pede pra conectar no dashboard. Sem
+			// isso o usuário só veria "ended with status failed".
+			if deployment.ErrorMessage != "" && format != ui.FormatJSON {
+				fmt.Println()
+				ui.PrintError(deployment.ErrorMessage)
+			}
 			// Non-zero exit so CI / agents can branch on outcome.
 			return fmt.Errorf("deployment %s ended with status %q", deployment.ID, deployment.Status)
 		}

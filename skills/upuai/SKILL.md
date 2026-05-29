@@ -97,6 +97,20 @@ upuai deploy --wait --yes -o json
 
 `--wait` polls every 3 seconds until status is `success` / `failed` / `cancelled` / `build_failed` / `superseded`. Default timeout: 300s — override with `--wait-timeout 600`. Exit code is non-zero on `failed` / `cancelled` / `build_failed`.
 
+### Deploy from local source — `upuai up` (no git repo)
+
+**`upuai deploy` deploys from a CONNECTED git repo** (github/gitlab — pulled fresh on every deploy). **`upuai up` deploys from your LOCAL working directory** — it packages the current directory into a tarball, uploads it to platform storage, and triggers a deploy from that source. No connected git repo required. Same UX as `vercel` / `railway up` / `fly deploy`. **Introduced in CLI v0.11.0** (`upuai up` is no longer an alias of `deploy`).
+
+Use `upuai up` when: there is no git repo connected, or the user wants a quick deploy of local code (uncommitted changes, scratch dirs). Use `upuai deploy` when a github/gitlab service is linked and the source of truth is the remote repo.
+
+```bash
+upuai up --wait --yes -o json
+```
+
+- Honors `.gitignore` / `.upuaiignore`; always excludes `.git`, `node_modules`, `.env*`.
+- Reads local `upuai.toml` exactly like the git path — release-phase / migrations apply identically.
+- `--wait` blocks until the deployment reaches a terminal status (exits non-zero on failure); `--wait-timeout <seconds>` caps the wait (default 300).
+
 ### Variants
 
 - **Docker image** (no build, just pull + run):
@@ -118,7 +132,7 @@ upuai deploy --wait --yes -o json
 ### Flag reference (init)
 
 - `--name <slug>` — kebab-case project slug. **Required when `--yes` is set.**
-- `--repo <owner>/<repo>` — creates a `github`-type service. URLs (`https://github.com/owner/repo[.git]`, `git@github.com:owner/repo`) are normalized to `owner/repo`.
+- `--repo <owner>/<repo>` — creates a repo-backed service. **GitHub and GitLab are both supported** — the provider is auto-detected from the URL/host. URLs (`https://github.com/owner/repo[.git]`, `git@github.com:owner/repo`, GitLab equivalents) are normalized to `owner/repo`. If you also pass `--type`, it must be `github` or `gitlab` to match the detected provider. Same auto-detect applies to `upuai add --repo <url>`.
 - `--branch <name>` — git branch (default `main`).
 - `--root-dir <path>` — subdirectory within the repo for monorepos (e.g. `apps/api`).
 - `--image <ref>` — creates a `docker_image`-type service; mutually exclusive with `--repo`.

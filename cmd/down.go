@@ -42,10 +42,15 @@ var downCmd = &cobra.Command{
 			return nil
 		}
 
-		latest := deployments[0]
+		// Remove o deployment ATIVO (o que está servindo), não o índice 0 cru.
+		target := api.ActiveDeployment(deployments)
+		if target == nil {
+			ui.PrintInfo("No active deployment to remove")
+			return nil
+		}
 
 		if !flagYes {
-			confirmed, err := ui.Confirm(fmt.Sprintf("Remove deployment %s? This will stop the service.", latest.ID))
+			confirmed, err := ui.Confirm(fmt.Sprintf("Remove deployment %s? This will stop the service.", target.ID))
 			if err != nil {
 				return err
 			}
@@ -56,7 +61,7 @@ var downCmd = &cobra.Command{
 		}
 
 		err = ui.RunWithSpinner("Removing deployment...", func() error {
-			return client.RemoveDeployment(latest.ID)
+			return client.RemoveDeployment(target.ID)
 		})
 		if err != nil {
 			return fmt.Errorf("failed to remove deployment: %w", err)

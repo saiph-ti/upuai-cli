@@ -55,12 +55,14 @@ Without flags, rolls back to the previous deployment.`,
 				return fmt.Errorf("failed to list deployments: %w", err)
 			}
 
-			if len(deployments) < 2 {
-				ui.PrintWarning("No previous deployment to rollback to")
+			// Alvo = deployment mais recente elegível a rollback (CanRollback =
+			// success && !ativo, computado pela API), não o índice [1] cru.
+			target := api.RollbackTarget(deployments)
+			if target == nil {
+				ui.PrintWarning("No previous successful deployment to rollback to")
 				return nil
 			}
-
-			deployID = deployments[1].ID
+			deployID = target.ID
 		}
 
 		if !flagYes {

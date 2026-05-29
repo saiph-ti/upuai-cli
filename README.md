@@ -99,7 +99,8 @@ Then ask the agent in natural language: *"deploy this to upuai"*. Full guide and
 
 | Command | Alias | Description |
 |---------|-------|-------------|
-| `deploy` | `up` | Deploy the current project |
+| `deploy` | | Deploy from a connected git repo (github/gitlab) |
+| `up` | | Deploy current directory from local source — no git needed (v0.11.0+) |
 | `redeploy` | | Redeploy the latest deployment |
 | `rollback` | | Rollback to a previous deployment |
 | `promote` | | Promote deployment between environments |
@@ -229,7 +230,7 @@ upuai init --name web --image nginx:1.27 --yes                      # docker_ima
 Flag reference:
 - `--name` — kebab-case project slug. Required when `--yes` is set.
 - `--framework` — one of `Next.js`, `Vite`, `React`, `Node.js`, `Go`, `Django`, `Flask`, `Python`, `Rails`, `Docker`, `Static`. Required when `--yes` is set and the CLI cannot auto-detect.
-- `--repo` — `owner/repo` (URLs accepted and normalized). Creates a `github`-type service with source. Mutually exclusive with `--image`.
+- `--repo` — `owner/repo` short form or a full GitHub **or** GitLab URL (auto-detected and normalized). Creates a `github`- or `gitlab`-type service with source. If you also pass `--type`, it must be `github` or `gitlab` to match the URL. Mutually exclusive with `--image`.
 - `--branch` — git branch (default `main`).
 - `--root-dir` — subdirectory within the repo for monorepos.
 - `--image` — Docker image reference. Creates a `docker_image`-type service.
@@ -248,6 +249,24 @@ upuai deploy --watch                  # Watch for file changes and auto-redeploy
 ```
 
 `--wait` polls every 3 s. Exit code is non-zero on `failed` / `cancelled` / `build_failed`.
+
+### up
+
+```bash
+upuai up                              # Deploy the current directory from local source
+upuai up -e production                # Deploy local source to production
+upuai up --wait                       # Block until terminal status (success/failed/...)
+upuai up --wait --wait-timeout 600    # Wait up to 10 minutes (default 300 s)
+```
+
+`upuai up` packages the local working directory into a tarball, uploads it to platform
+storage, and triggers a deploy from that source — **no connected git repo required**
+(same UX as `vercel`, `railway up`, `fly deploy`). It honors `.gitignore` / `.upuaiignore`
+and excludes `.git`, `node_modules`, and `.env*`. A local `upuai.toml` is read just like
+the git path, so release-phase / migrations apply. Available since **v0.11.0**.
+
+`deploy` = deploy from a **connected git** repo · `up` = deploy from **local source**.
+These are separate commands; `up` is no longer an alias of `deploy`.
 
 ### redeploy
 
@@ -310,7 +329,15 @@ upuai delete -y             # Skip confirmation
 
 ```bash
 upuai add                   # Interactive wizard to add a service
+upuai add --repo myorg/repo # GitHub or GitLab URL / owner/repo short form (auto-detected)
+upuai add --image registry.example.com/app:1.0 \
+  --registry-host registry.example.com \
+  --registry-user ci --registry-password "$TOKEN"   # Private Docker image
 ```
+
+Flag reference:
+- `--repo` — `owner/repo` short form or a full GitHub **or** GitLab URL (auto-detected). With `--type`, must be `github` or `gitlab` to match.
+- `--registry-host` / `--registry-user` / `--registry-password` — credentials for a private Docker registry (used with `--image`). `--registry-user` and `--registry-password` must be supplied together.
 
 ### logs
 
@@ -422,7 +449,8 @@ Common workflows mapped to `upuai`:
 |---|---|
 | `railway login` | `upuai login` |
 | `railway link` | `upuai link` |
-| `railway up` / `railway deploy` | `upuai deploy` (alias `up`) |
+| `railway up` (local source) | `upuai up` |
+| `railway deploy` (connected repo) | `upuai deploy` |
 | `railway logs` | `upuai logs` |
 | `railway add --database postgres` | `upuai add` (interactive wizard, type=database) |
 | `railway connect [svc]` (interactive psql) | `upuai db connect` |

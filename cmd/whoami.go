@@ -23,6 +23,12 @@ var whoamiCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		// Load() devolve (nil, nil) se o arquivo sumiu — ex: `logout` concorrente
+		// entre o requireAuth() acima e aqui. Sem esse guard, deref de creds.User
+		// abaixo dá panic.
+		if creds == nil {
+			return fmt.Errorf("not logged in — run 'upuai login'")
+		}
 
 		format := getOutputFormat()
 

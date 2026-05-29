@@ -49,6 +49,76 @@ func TestParseRepo(t *testing.T) {
 	}
 }
 
+func TestParseRepoWithProvider(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		in           string
+		wantRepo     string
+		wantProvider string
+		wantErr      bool
+	}{
+		{"github https", "https://github.com/o/r", "o/r", "github", false},
+		{"github www", "https://www.github.com/o/r", "o/r", "github", false},
+		{"gitlab https", "https://gitlab.com/group/proj.git", "group/proj", "gitlab", false},
+		{"gitlab ssh", "git@gitlab.com:group/proj.git", "group/proj", "gitlab", false},
+		{"gitlab hostless", "gitlab.com/group/proj", "group/proj", "gitlab", false},
+		{"shorthand no host", "o/r", "o/r", "", false},
+		{"bitbucket unsupported", "https://bitbucket.org/o/r", "o/r", "bitbucket", false},
+		{"self-hosted explicit host", "https://git.acme.com/o/r", "o/r", "git.acme.com", false},
+		{"auth embedded", "https://user:tok@gitlab.com/o/r", "", "", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo, provider, err := ParseRepoWithProvider(tt.in)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ParseRepoWithProvider(%q) err = %v, wantErr %v", tt.in, err, tt.wantErr)
+			}
+			if err != nil {
+				return
+			}
+			if repo != tt.wantRepo || provider != tt.wantProvider {
+				t.Fatalf("ParseRepoWithProvider(%q) = (%q, %q), want (%q, %q)", tt.in, repo, provider, tt.wantRepo, tt.wantProvider)
+			}
+		})
+	}
+}
+
+func TestResolveProvider(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		explicit string
+		detected string
+		want     string
+		wantErr  bool
+	}{
+		{"detected gitlab", "", "gitlab", "gitlab", false},
+		{"detected github", "", "github", "github", false},
+		{"shorthand defaults github", "", "", "github", false},
+		{"explicit gitlab respected", "gitlab", "", "gitlab", false},
+		{"explicit matches detected", "gitlab", "gitlab", "gitlab", false},
+		{"explicit conflicts host", "github", "gitlab", "", true},
+		{"unsupported host rejected", "", "bitbucket", "", true},
+		{"self-hosted rejected", "", "git.acme.com", "", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ResolveProvider(tt.explicit, tt.detected)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ResolveProvider(%q,%q) err = %v, wantErr %v", tt.explicit, tt.detected, err, tt.wantErr)
+			}
+			if err == nil && got != tt.want {
+				t.Fatalf("ResolveProvider(%q,%q) = %q, want %q", tt.explicit, tt.detected, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestNormalizeRootDir(t *testing.T) {
 	t.Parallel()
 

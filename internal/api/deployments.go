@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"os"
 )
 
 type DeploymentMeta struct {
@@ -28,6 +30,35 @@ type Deployment struct {
 	StartedAt      string          `json:"startedAt,omitempty"`
 	FinishedAt     string          `json:"finishedAt,omitempty"`
 	CreatedAt      string          `json:"createdAt"`
+	// ErrorMessage é populado pela API só em status failed/build_failed (vem do
+	// último DeploymentEvent / failureSummary). Carrega mensagem acionável — ex:
+	// "repositório privado e sem credencial git... Conecte sua conta no dashboard".
+	ErrorMessage string `json:"errorMessage,omitempty"`
+}
+
+// ActiveDeployment retorna o deployment que está servindo (IsActive), ou nil.
+// Usado por `down` em vez do índice [0] cru — a lista vem ordenada por criação
+// desc, então [0] pode ser um build em andamento/falho, não o que está no ar.
+func ActiveDeployment(ds []Deployment) *Deployment {
+	for i := range ds {
+		if ds[i].IsActive {
+			return &ds[i]
+		}
+	}
+	return nil
+}
+
+// RollbackTarget retorna o deployment mais recente elegível a rollback, ou nil.
+// CanRollback (= success && !ativo) é computado pela API; a lista deve vir
+// ordenada por criação desc (contrato do ListDeployments). Usado por `rollback`
+// em vez do índice [1] cru.
+func RollbackTarget(ds []Deployment) *Deployment {
+	for i := range ds {
+		if ds[i].CanRollback {
+			return &ds[i]
+		}
+	}
+	return nil
 }
 
 type DeployRequest struct {
@@ -35,6 +66,10 @@ type DeployRequest struct {
 	ServiceID   string `json:"serviceId,omitempty"`
 	GitBranch   string `json:"gitBranch,omitempty"`
 	GitSha      string `json:"gitSha,omitempty"`
+	// Deploy de fonte local (`upuai up`): tarball já enviado via presigned PUT.
+	ArchiveKey    string `json:"archiveKey,omitempty"`
+	ArchiveSha256 string `json:"archiveSha256,omitempty"`
+	UpuaiToml     string `json:"upuaiToml,omitempty"`
 }
 
 func (c *Client) Deploy(projectID string, req *DeployRequest) (*Deployment, error) {
@@ -44,6 +79,53 @@ func (c *Client) Deploy(projectID string, req *DeployRequest) (*Deployment, erro
 		return nil, err
 	}
 	return &deployment, nil
+}
+
+// SourceUpload é a resposta do endpoint de presigned PUT.
+type SourceUpload struct {
+	UploadURL      string `json:"uploadUrl"`
+	ObjectKey      string `json:"objectKey"`
+	ExpiresSeconds int    `json:"expiresSeconds"`
+}
+
+// CreateSourceUpload pede uma presigned PUT URL pro tarball de fonte (`upuai up`).
+// contentLength é o tamanho do tarball gzip — usado pra gate de plano server-side.
+func (c *Client) CreateSourceUpload(envID, serviceID string, contentLength int64) (*SourceUpload, error) {
+	body := map[string]int64{"contentLength": contentLength}
+	var out SourceUpload
+	err := c.Post(fmt.Sprintf("/environments/%s/services/%s/source-uploads", envID, serviceID), body, &out)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UploadSource faz PUT cru do arquivo na presigned URL do MinIO. Não usa o
+// Client (que injeta auth + base URL) — a URL presigned já carrega a assinatura
+// e aponta direto pro object storage.
+func (c *Client) UploadSource(uploadURL, filePath string, size int64) error {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("open source archive: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	req, err := http.NewRequest(http.MethodPut, uploadURL, f)
+	if err != nil {
+		return fmt.Errorf("build upload request: %w", err)
+	}
+	req.ContentLength = size
+	req.Header.Set("Content-Type", "application/gzip")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("upload source archive: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("upload source archive: storage returned %s", resp.Status)
+	}
+	return nil
 }
 
 func (c *Client) ListDeployments(envID, serviceID string) ([]Deployment, error) {

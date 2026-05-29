@@ -62,7 +62,28 @@ func (s *CredentialStore) Save(creds *Credentials) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal credentials: %w", err)
 	}
-	if err := os.WriteFile(s.path, data, filePerm); err != nil {
+	// Escrita atômica: grava num temp 0600 no mesmo dir e renomeia por cima. O
+	// rename preserva as perms do temp independente de um arquivo pré-existente
+	// — os.WriteFile só aplicava 0600 na criação, então um credentials.json
+	// legado com perms frouxas continuaria frouxo. Também evita escrita parcial.
+	tmp, err := os.CreateTemp(dir, ".credentials-*.tmp")
+	if err != nil {
+		return fmt.Errorf("failed to create temp credentials file: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer func() { _ = os.Remove(tmpName) }() // no-op se o rename já consumiu o temp
+	if err := tmp.Chmod(filePerm); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("failed to set credentials permissions: %w", err)
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("failed to write credentials: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("failed to flush credentials: %w", err)
+	}
+	if err := os.Rename(tmpName, s.path); err != nil {
 		return fmt.Errorf("failed to write credentials: %w", err)
 	}
 	return nil

@@ -31,7 +31,7 @@ func NewClient() *Client {
 	}
 }
 
-func (c *Client) doRequest(method, path string, body any, result any) error {
+func (c *Client) doRequest(method, path string, body any, result any, retried bool) error {
 	url := c.baseURL + path
 
 	var bodyReader io.Reader
@@ -65,9 +65,12 @@ func (c *Client) doRequest(method, path string, body any, result any) error {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode == http.StatusUnauthorized && c.credStore != nil {
+	// Retry no máximo UMA vez após refresh — `retried` impede recursão infinita
+	// se o servidor devolver um token que segue dando 401 (token revogado, clock
+	// skew, bug). Sem essa guarda o CLI travaria em loop martelando /auth/refresh.
+	if resp.StatusCode == http.StatusUnauthorized && !retried && c.credStore != nil {
 		if refreshed := c.tryRefreshToken(); refreshed {
-			return c.doRequest(method, path, body, result)
+			return c.doRequest(method, path, body, result, true)
 		}
 	}
 
@@ -130,11 +133,19 @@ func (c *Client) tryRefreshToken() bool {
 		return false
 	}
 
-	url := c.baseURL + "/auth/refresh?refreshToken=" + creds.RefreshToken
-	req, err := http.NewRequest(http.MethodPost, url, nil)
+	// Refresh token vai no CORPO do POST, não na query string — na URL ele
+	// vazaria em access log de proxy/Traefik. O endpoint /auth/refresh aceita
+	// body (preferido) e ainda cai pra query como fallback legado.
+	url := c.baseURL + "/auth/refresh"
+	payload, err := json.Marshal(map[string]string{"refreshToken": creds.RefreshToken})
 	if err != nil {
 		return false
 	}
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(payload))
+	if err != nil {
+		return false
+	}
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := c.httpClient.Do(req)
@@ -160,23 +171,23 @@ func (c *Client) tryRefreshToken() bool {
 }
 
 func (c *Client) Get(path string, result any) error {
-	return c.doRequest(http.MethodGet, path, nil, result)
+	return c.doRequest(http.MethodGet, path, nil, result, false)
 }
 
 func (c *Client) Post(path string, body any, result any) error {
-	return c.doRequest(http.MethodPost, path, body, result)
+	return c.doRequest(http.MethodPost, path, body, result, false)
 }
 
 func (c *Client) Put(path string, body any, result any) error {
-	return c.doRequest(http.MethodPut, path, body, result)
+	return c.doRequest(http.MethodPut, path, body, result, false)
 }
 
 func (c *Client) Patch(path string, body any, result any) error {
-	return c.doRequest(http.MethodPatch, path, body, result)
+	return c.doRequest(http.MethodPatch, path, body, result, false)
 }
 
 func (c *Client) Delete(path string) error {
-	return c.doRequest(http.MethodDelete, path, nil, nil)
+	return c.doRequest(http.MethodDelete, path, nil, nil, false)
 }
 
 // StreamSSE streams a Server-Sent Events endpoint, invoking onLine for each
@@ -186,6 +197,10 @@ func (c *Client) Delete(path string) error {
 // Auth: Bearer header (the API's sse-auth.ts also accepts this; ?access_token=
 // is the EventSource fallback for browsers).
 func (c *Client) StreamSSE(ctx context.Context, path string, onLine func(string)) error {
+	return c.streamSSE(ctx, path, onLine, false)
+}
+
+func (c *Client) streamSSE(ctx context.Context, path string, onLine func(string), retried bool) error {
 	url := c.baseURL + path
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -210,9 +225,10 @@ func (c *Client) StreamSSE(ctx context.Context, path string, onLine func(string)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode == http.StatusUnauthorized && c.credStore != nil {
+	// Retry no máximo UMA vez após refresh (ver doRequest).
+	if resp.StatusCode == http.StatusUnauthorized && !retried && c.credStore != nil {
 		if refreshed := c.tryRefreshToken(); refreshed {
-			return c.StreamSSE(ctx, path, onLine)
+			return c.streamSSE(ctx, path, onLine, true)
 		}
 	}
 
@@ -239,6 +255,10 @@ func (c *Client) StreamSSE(ctx context.Context, path string, onLine func(string)
 }
 
 func (c *Client) GetRaw(path string) ([]byte, error) {
+	return c.getRaw(path, false)
+}
+
+func (c *Client) getRaw(path string, retried bool) ([]byte, error) {
 	url := c.baseURL + path
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
@@ -259,9 +279,10 @@ func (c *Client) GetRaw(path string) ([]byte, error) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode == http.StatusUnauthorized && c.credStore != nil {
+	// Retry no máximo UMA vez após refresh (ver doRequest).
+	if resp.StatusCode == http.StatusUnauthorized && !retried && c.credStore != nil {
 		if refreshed := c.tryRefreshToken(); refreshed {
-			return c.GetRaw(path)
+			return c.getRaw(path, true)
 		}
 	}
 

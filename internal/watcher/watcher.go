@@ -27,6 +27,24 @@ func Watch(dir string, debounce time.Duration, callback WatchCallback) error {
 		return err
 	}
 
+	// Worker único roda os callbacks SERIALMENTE: nunca dois deploys ao mesmo
+	// tempo, mesmo que saves rápidos disparem o debounce durante um deploy lento
+	// (antes, time.AfterFunc rodava callback em goroutine própria e timer.Stop()
+	// não cancelava um já disparado → deploys concorrentes + race no deployCount).
+	// trigger é bufferizado(1): múltiplos disparos durante um run coalescem em um.
+	trigger := make(chan struct{}, 1)
+	go func() {
+		for range trigger {
+			_ = callback()
+		}
+	}()
+	fire := func() {
+		select {
+		case trigger <- struct{}{}:
+		default: // já há um disparo pendente — coalesce
+		}
+	}
+
 	var timer *time.Timer
 
 	for {
@@ -42,9 +60,7 @@ func Watch(dir string, debounce time.Duration, callback WatchCallback) error {
 				if timer != nil {
 					timer.Stop()
 				}
-				timer = time.AfterFunc(debounce, func() {
-					_ = callback()
-				})
+				timer = time.AfterFunc(debounce, fire)
 			}
 		case err, ok := <-watcher.Errors:
 			if !ok {
