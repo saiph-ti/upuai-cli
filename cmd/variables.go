@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/upuai-cloud/cli/internal/api"
@@ -9,7 +10,18 @@ import (
 	"github.com/upuai-cloud/cli/internal/ui"
 )
 
-var variablesService string
+var (
+	variablesService string
+	variablesScope   string
+)
+
+// validEnvVarScopes mapeia o input do usuário (case-insensitive) pro valor
+// canônico do enum EnvVarScope da API. Vazio = servidor mantém/aplica default.
+var validEnvVarScopes = map[string]string{
+	"both":    "BOTH",
+	"runtime": "RUNTIME",
+	"build":   "BUILD",
+}
 
 var variablesCmd = &cobra.Command{
 	Use:     "variables",
@@ -22,6 +34,8 @@ Examples:
   upuai variables list -s api
   upuai variables set KEY=VALUE
   upuai variables set KEY1=VALUE1 KEY2=VALUE2
+  upuai variables set DATABASE_URL=... --scope runtime   # fora do build
+  upuai variables set NPM_TOKEN=... --scope build         # fora do runtime
   upuai variables delete KEY`,
 }
 
@@ -95,6 +109,15 @@ var variablesSetCmd = &cobra.Command{
 			return err
 		}
 
+		scope := ""
+		if variablesScope != "" {
+			canonical, ok := validEnvVarScopes[strings.ToLower(variablesScope)]
+			if !ok {
+				return fmt.Errorf("invalid --scope %q — use both|runtime|build", variablesScope)
+			}
+			scope = canonical
+		}
+
 		var vars []api.VariableInput
 		seen := map[string]int{}
 		for _, arg := range args {
@@ -109,6 +132,7 @@ var variablesSetCmd = &cobra.Command{
 			vars = append(vars, api.VariableInput{
 				Key:   parsed.Key,
 				Value: parsed.Value,
+				Scope: scope,
 			})
 		}
 
@@ -131,7 +155,11 @@ var variablesSetCmd = &cobra.Command{
 		}
 
 		for _, v := range vars {
-			ui.PrintSuccess(fmt.Sprintf("Set %s", v.Key))
+			if v.Scope != "" && v.Scope != "BOTH" {
+				ui.PrintSuccess(fmt.Sprintf("Set %s (scope: %s)", v.Key, strings.ToLower(v.Scope)))
+			} else {
+				ui.PrintSuccess(fmt.Sprintf("Set %s", v.Key))
+			}
 		}
 		return nil
 	},
@@ -180,6 +208,7 @@ var variablesDeleteCmd = &cobra.Command{
 
 func init() {
 	variablesCmd.PersistentFlags().StringVarP(&variablesService, "service", "s", "", "Service name, slug, or ID (overrides linked service)")
+	variablesSetCmd.Flags().StringVar(&variablesScope, "scope", "", "Injection phase: both (default) | runtime (not in build) | build (not in runtime)")
 	variablesCmd.AddCommand(variablesListCmd)
 	variablesCmd.AddCommand(variablesSetCmd)
 	variablesCmd.AddCommand(variablesDeleteCmd)

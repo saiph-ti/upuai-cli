@@ -9,6 +9,9 @@ type EnvVar struct {
 	ResolvedValue    string `json:"resolvedValue,omitempty"`
 	IsSecret         bool   `json:"isSecret"`
 	HasInterpolation bool   `json:"hasInterpolation"`
+	// Scope: BOTH (default) | RUNTIME | BUILD — fase(s) em que a var é injetada.
+	// Omitido em respostas legadas (tratar como BOTH).
+	Scope string `json:"scope,omitempty"`
 }
 
 // DisplayValue returns the resolved value if available, otherwise the raw value.
@@ -23,6 +26,9 @@ type VariableInput struct {
 	Key      string `json:"key"`
 	Value    string `json:"value"`
 	IsSecret bool   `json:"isSecret,omitempty"`
+	// Scope: "BOTH" | "RUNTIME" | "BUILD". Vazio = servidor mantém o atual (update)
+	// ou aplica o default BOTH (create).
+	Scope string `json:"scope,omitempty"`
 }
 
 func (c *Client) ListVariables(envID, serviceID string) ([]EnvVar, error) {

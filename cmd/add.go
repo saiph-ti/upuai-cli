@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/upuai-cloud/cli/internal/api"
@@ -32,6 +33,7 @@ const defaultBucketRegion = "us-east-1"
 var (
 	flagAddType               string
 	flagAddName               string
+	flagAddEngine             string
 	flagAddImage              string
 	flagAddRepo               string
 	flagAddBranch             string
@@ -89,6 +91,16 @@ Examples:
 					serviceTypeLabel, serviceTypeLabels, serviceTypeLabel,
 				)
 			}
+		}
+
+		// Managed database/cache (Postgres, Redis, MySQL, Mongo) provisiona via
+		// template gerenciado — cria o serviço + injeta as connection vars
+		// (DATABASE_URL/REDIS_URL/...) automaticamente. O caminho genérico
+		// CreateService(type=database) criava um nó "vazio" sem provisionamento
+		// nem variáveis, o que confundia (relato de integração Rails). Mesmo
+		// padrão do bucket acima: tipo com provisionamento dedicado.
+		if serviceType == "database" {
+			return runManagedDatabaseAdd(projectID, cfg, flagAddName, flagAddEngine)
 		}
 
 		// Enter service name
@@ -285,9 +297,111 @@ Examples:
 	},
 }
 
+// runManagedDatabaseAdd provisiona um banco/cache gerenciado via template
+// (Postgres, Redis, MySQL, Mongo). Espelha o fluxo do bucket: o template cria
+// o ServiceInstance + injeta as connection vars (DATABASE_URL/REDIS_URL/...) no
+// momento da criação. Seleção do engine: flag --engine (match por engine ou
+// nome) ou picker interativo. Sem nome → o template usa o default
+// "<engine>-<versão>".
+func runManagedDatabaseAdd(projectID string, cfg *config.ProjectConfig, name, engine string) error {
+	client := api.NewClient()
+
+	var templates []api.DatabaseTemplate
+	err := ui.RunWithSpinner("Loading managed database templates...", func() error {
+		var listErr error
+		templates, listErr = client.ListTemplates()
+		return listErr
+	})
+	if err != nil {
+		return fmt.Errorf("failed to list templates: %w", err)
+	}
+	if len(templates) == 0 {
+		return fmt.Errorf("no managed database templates available")
+	}
+
+	chosen, err := pickDatabaseTemplate(templates, engine)
+	if err != nil {
+		return err
+	}
+
+	req := &api.DeployTemplateRequest{
+		TemplateID:    chosen.ID,
+		Name:          name,
+		EnvironmentID: cfg.EnvironmentID,
+	}
+	var resp *api.DeployTemplateResponse
+	err = ui.RunWithSpinner(fmt.Sprintf("Provisioning managed %s...", chosen.Engine), func() error {
+		var deployErr error
+		resp, deployErr = client.DeployTemplate(projectID, req)
+		return deployErr
+	})
+	if err != nil {
+		return fmt.Errorf("failed to provision %s: %w", chosen.Engine, err)
+	}
+
+	format := getOutputFormat()
+	if format == ui.FormatJSON {
+		ui.PrintJSON(resp)
+		return nil
+	}
+
+	fmt.Println()
+	ui.PrintSuccess(fmt.Sprintf("Managed %s %s provisioned", chosen.Engine, chosen.Version))
+	for _, s := range resp.Services {
+		ui.PrintKeyValue("Service ID", s.ID, "Name", s.Name)
+	}
+	ui.PrintInfo("Connection variables (DATABASE_URL/REDIS_URL/...) are injected automatically — reference them from your app service.")
+
+	// Liga o config local ao primeiro serviço criado se nada estava linkado.
+	if cfg.ServiceID == "" && len(resp.Services) > 0 {
+		cfg.ServiceID = resp.Services[0].ID
+		cfg.ServiceName = resp.Services[0].Name
+		_ = config.SaveProjectConfig(cfg)
+		fmt.Println()
+		ui.PrintInfo("Linked to new managed database")
+	}
+
+	fmt.Println()
+	return nil
+}
+
+// pickDatabaseTemplate resolve o template escolhido: por --engine (match em
+// engine ou nome, case-insensitive) ou via picker interativo quando o flag é
+// vazio.
+func pickDatabaseTemplate(templates []api.DatabaseTemplate, engine string) (*api.DatabaseTemplate, error) {
+	if engine != "" {
+		for i := range templates {
+			if strings.EqualFold(templates[i].Engine, engine) || strings.EqualFold(templates[i].Name, engine) {
+				return &templates[i], nil
+			}
+		}
+		available := make([]string, len(templates))
+		for i, t := range templates {
+			available[i] = t.Engine
+		}
+		return nil, fmt.Errorf("no managed database template matches engine %q (available: %s)", engine, strings.Join(available, ", "))
+	}
+
+	labels := make([]string, len(templates))
+	for i, t := range templates {
+		labels[i] = fmt.Sprintf("%s %s", t.Name, t.Version)
+	}
+	selected, err := ui.SelectOne("Database engine:", labels)
+	if err != nil {
+		return nil, err
+	}
+	for i := range labels {
+		if labels[i] == selected {
+			return &templates[i], nil
+		}
+	}
+	return nil, fmt.Errorf("invalid selection")
+}
+
 func init() {
 	addCmd.Flags().StringVar(&flagAddType, "type", "", "Service type: app, bucket, database, docker, docker image, function, github, gitlab")
 	addCmd.Flags().StringVar(&flagAddName, "name", "", "Service name (skips prompt)")
+	addCmd.Flags().StringVar(&flagAddEngine, "engine", "", "Managed database engine (postgres, redis, mysql, mongo) — used with --type database to skip the picker")
 	addCmd.Flags().StringVar(&flagAddImage, "image", "", "Docker image to deploy (e.g. nginx:latest) — sets type to docker_image")
 	addCmd.Flags().StringVar(&flagAddRepo, "repo", "", "Git repo as 'owner/repo' ou URL (github.com/gitlab.com) — o tipo é detectado pelo host; --type força github|gitlab")
 	addCmd.Flags().StringVar(&flagAddBranch, "branch", "main", "Git branch (used with --repo, default: main)")

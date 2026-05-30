@@ -110,12 +110,13 @@ Then ask the agent in natural language: *"deploy this to upuai"*. Full guide and
 
 | Command | Description |
 |---------|-------------|
-| `add` | Add a new service to the project (interactive wizard) |
+| `add` | Add a new service to the project (interactive wizard). `--type database` provisions a **managed** Postgres/Redis/MySQL/Mongo via template (connection vars injected automatically); use `--engine` to skip the picker |
 | `restart` | Restart the linked service |
 | `logs` | View service logs |
 | `scale` | Scale service to N replicas |
-| `run` | Run a command with service environment variables injected |
-| `shell` | Open a subshell with service environment variables injected |
+| `run` | Run a command **locally** with service environment variables injected |
+| `shell` | Open a **local** subshell with service environment variables injected |
+| `ssh` | Open an interactive shell (or run a command) **inside the running container** — `upuai ssh -s api -- bin/rails console`. Generic/stack-agnostic; backed by a K8s PTY exec |
 
 ### Database
 
@@ -140,13 +141,15 @@ Then ask the agent in natural language: *"deploy this to upuai"*. Full guide and
 | Command | Alias | Description |
 |---------|-------|-------------|
 | `variables list` | `vars list` | List all environment variables |
-| `variables set KEY=VALUE...` | `vars set` | Set one or more environment variables |
+| `variables set KEY=VALUE...` | `vars set` | Set one or more environment variables. `--scope both\|runtime\|build` controls injection phase (default `both`; `runtime` = not exposed during build; `build` = not in the running container) |
 | `variables delete KEY` | `vars delete` | Delete an environment variable |
 | `domain list` | `domains list` | List custom domains |
 | `domain add <domain>` | `domains add` | Add a custom domain |
 | `domain delete <domain-id>` | `domains delete` | Delete a custom domain |
 
-`variables`, `run`, and `shell` accept `-s/--service <name|slug|id>` to target a service other than the linked one (paridade com `railway variable list -s Postgres`).
+`variables`, `run`, `shell`, and `ssh` accept `-s/--service <name|slug|id>` to target a service other than the linked one (paridade com `railway variable list -s Postgres`).
+
+> **`run`/`shell` vs `ssh`**: `run`/`shell` execute **locally** with the service's env vars injected (like `railway run`). `ssh` opens a session **inside the running production container** (like `railway ssh` / `fly ssh console`) — use it for `rails console`, `manage.py shell`, one-off maintenance, or debugging in the live pod.
 
 ### Utility
 

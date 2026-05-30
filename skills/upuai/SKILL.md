@@ -74,7 +74,7 @@ A project on Upuai owns one or more **services**. Each service has a **type** th
 | `docker_image` | Pre-built image from a registry | `upuai init --image nginx:1.27` or `upuai add --image …` |
 | `docker` | Dockerfile-based, source uploaded | Dashboard / `upuai add --type docker` |
 | `empty` | None — placeholder | `upuai init` without `--repo`/`--image` |
-| `database`, `bucket`, `function` | Platform-managed | `upuai add --type database` etc. |
+| `database`, `bucket`, `function` | Platform-managed | `upuai add --type database` (engine picker / `--engine postgres\|redis\|mysql\|mongo`) provisions a **managed** instance and auto-injects connection vars (`DATABASE_URL`/`REDIS_URL`/…); `bucket`/`function` similar |
 
 `upuai deploy` triggers a build + rollout for the **linked service**. An `empty` service cannot be deployed — attach a source first (re-init with `--repo`, or `upuai add --type github`, or use the dashboard).
 
@@ -305,5 +305,7 @@ Pass one of these to `--framework`:
 
 - This skill makes you knowledgeable about the CLI; it does not give you cluster access. The CLI talks to Upuai's API on the user's behalf.
 - `upuai login` is interactive (browser OAuth or email OTP) — the only supported auth flow, same pattern as `railway login` / `vercel login` / `fly auth login`. On agent runners without a browser, ask the user to log in once on their own machine. Credentials persist in `~/.upuai/credentials.json` and refresh automatically; no headless / token-based auth path exists today.
-- `upuai add` (without `--type`/`--name`/`--repo`/`--image`), `upuai link` (without `--service`/`--env`), `upuai shell` (subshell), and `upuai db connect` (without `--print`) all need a TTY. Use the non-interactive flag variants noted in the relevant sections above.
+- `upuai add` (without `--type`/`--name`/`--repo`/`--image`), `upuai link` (without `--service`/`--env`), `upuai shell` (subshell), `upuai ssh` (in-container PTY), and `upuai db connect` (without `--print`) all need a TTY. Use the non-interactive flag variants noted in the relevant sections above.
+- `upuai run` / `upuai shell` run **locally** with the service env vars injected (like `railway run`). `upuai ssh [-s svc] [-- cmd]` opens a session **inside the running production container** (like `railway ssh` / `fly ssh console`) — generic and stack-agnostic (`upuai ssh -- bin/rails console`, `-- python manage.py shell`, `-- node`, or no command for a shell). It runs in the live pod, so destructive commands affect the serving container.
+- `upuai variables set KEY=val --scope runtime|build` scopes a var to a single phase: `runtime` keeps it out of the build (e.g. `DATABASE_URL`, secrets — avoids baking into a layer / breaking `assets:precompile`); `build` keeps it out of the running container (e.g. a private registry/npm token). Default `both` = build + runtime (Railway/Vercel parity).
 - Builds run on Upuai's cluster, not locally. Real-time progress isn't streamed by `upuai deploy --wait` itself; use `upuai logs --build` and `upuai logs --deploy` for live tail of those stages while a deploy is in flight.
