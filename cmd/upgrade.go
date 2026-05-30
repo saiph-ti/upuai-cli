@@ -55,14 +55,21 @@ func (m installMethod) String() string {
 	}
 }
 
-func (m installMethod) upgradeCommand() (program string, args []string, ok bool) {
+// upgradeCommands returns the ordered sequence of commands to upgrade via the
+// package manager. The refresh step (`brew update` / `scoop update`) is
+// MANDATORY and must run first: `brew upgrade upuai` alone never sees a newly
+// released version because Homebrew only re-reads the tap clone on `brew
+// update` — without it the upgrade reports "already installed" forever. Scoop
+// is the same: `scoop update <app>` upgrades to the version in the cached
+// manifest, while `scoop update` (no arg) refreshes the bucket manifests first.
+func (m installMethod) upgradeCommands() (cmds [][]string, ok bool) {
 	switch m {
 	case installBrew:
-		return "brew", []string{"upgrade", "upuai"}, true
+		return [][]string{{"brew", "update"}, {"brew", "upgrade", "upuai"}}, true
 	case installScoop:
-		return "scoop", []string{"update", "upuai"}, true
+		return [][]string{{"scoop", "update"}, {"scoop", "update", "upuai"}}, true
 	default:
-		return "", nil, false
+		return nil, false
 	}
 }
 
@@ -110,8 +117,10 @@ Use --check to preview what would run without upgrading.`,
 		if flagUpgradeCheck {
 			ui.PrintInfo(fmt.Sprintf("Current version: %s", version.Short()))
 			ui.PrintInfo(fmt.Sprintf("Install method:  %s", method))
-			if program, methodArgs, ok := method.upgradeCommand(); ok {
-				ui.PrintInfo(fmt.Sprintf("Would run:       %s %s", program, strings.Join(methodArgs, " ")))
+			if cmds, ok := method.upgradeCommands(); ok {
+				for _, cmdArgs := range cmds {
+					ui.PrintInfo(fmt.Sprintf("Would run:       %s", strings.Join(cmdArgs, " ")))
+				}
 			} else {
 				ui.PrintInfo("Would run:       direct download from GitHub releases")
 			}
@@ -123,15 +132,18 @@ Use --check to preview what would run without upgrading.`,
 
 		// Delegate to the package manager when one is in charge — overwriting
 		// the binary directly under a managed prefix breaks future upgrades.
-		if program, methodArgs, ok := method.upgradeCommand(); ok {
+		// Runs the full sequence (refresh index, then upgrade) in order.
+		if cmds, ok := method.upgradeCommands(); ok {
 			fmt.Println()
-			ui.PrintInfo(fmt.Sprintf("Running: %s %s", program, strings.Join(methodArgs, " ")))
-			c := exec.Command(program, methodArgs...)
-			c.Stdout = os.Stdout
-			c.Stderr = os.Stderr
-			c.Stdin = os.Stdin
-			if err := c.Run(); err != nil {
-				return fmt.Errorf("%s upgrade failed: %w", method, err)
+			for _, cmdArgs := range cmds {
+				ui.PrintInfo(fmt.Sprintf("Running: %s", strings.Join(cmdArgs, " ")))
+				c := exec.Command(cmdArgs[0], cmdArgs[1:]...)
+				c.Stdout = os.Stdout
+				c.Stderr = os.Stderr
+				c.Stdin = os.Stdin
+				if err := c.Run(); err != nil {
+					return fmt.Errorf("%s upgrade failed at `%s`: %w", method, strings.Join(cmdArgs, " "), err)
+				}
 			}
 			return nil
 		}
