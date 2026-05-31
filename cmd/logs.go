@@ -214,7 +214,11 @@ func printTimeline(tl *api.DeploymentTimeline) {
 		ui.PrintWarning("Partial timeline — some sources unavailable")
 	}
 
-	if tl.FailureSummary != nil && len(tl.FailureSummary.LastLines) > 0 {
+	// failure_summary is FAILED-only (proto contract). Gate on the timeline status
+	// so a success ("DEPLOYMENT_STATUS_LIVE") never renders a failure block — guards
+	// against legacy persisted blobs that carried a bogus summary on green deploys.
+	if tl.Status == "DEPLOYMENT_STATUS_FAILED" &&
+		tl.FailureSummary != nil && len(tl.FailureSummary.LastLines) > 0 {
 		fmt.Println()
 		header := fmt.Sprintf("✗ %s — %s",
 			strings.TrimPrefix(tl.FailureSummary.Stage, "STAGE_KIND_"),
