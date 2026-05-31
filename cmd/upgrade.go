@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
@@ -13,6 +15,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/upuai-cloud/cli/internal/archive"
 	"github.com/upuai-cloud/cli/internal/ui"
 	"github.com/upuai-cloud/cli/pkg/version"
 )
@@ -180,53 +183,139 @@ func runDirectUpgrade() error {
 		return nil
 	}
 
-	osName := runtime.GOOS
-	archName := runtime.GOARCH
-	assetName := fmt.Sprintf("upuai_%s_%s", osName, archName)
-
-	var downloadURL string
-	for _, asset := range release.Assets {
-		if strings.Contains(asset.Name, assetName) {
-			downloadURL = asset.BrowserDownloadURL
+	// Assets do goreleaser são upuai_<ver>_<os>_<arch>.<ext> (arch amd64→x86_64,
+	// .zip só no Windows). Casamos por SUFIXO — imune ao segmento de versão no meio
+	// do nome e sem colidir com checksums.txt.
+	suffix := assetSuffix(runtime.GOOS, runtime.GOARCH)
+	var asset githubAsset
+	for _, a := range release.Assets {
+		if strings.HasSuffix(a.Name, suffix) {
+			asset = a
 			break
 		}
 	}
-
-	if downloadURL == "" {
-		return fmt.Errorf("no binary found for %s/%s — download manually from https://github.com/saiph-ti/upuai-cli/releases/latest", osName, archName)
+	if asset.BrowserDownloadURL == "" {
+		return fmt.Errorf("no release asset matching *%s — download manually from https://github.com/saiph-ti/upuai-cli/releases/latest", suffix)
 	}
 
 	execPath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("failed to determine executable path: %w", err)
 	}
+	// Segue symlink (ex.: /usr/local/bin/upuai → caminho real) pra trocar o arquivo certo.
+	if resolved, lerr := filepath.EvalSymlinks(execPath); lerr == nil {
+		execPath = resolved
+	}
 
 	var data []byte
 	err = ui.RunWithSpinner(fmt.Sprintf("Downloading v%s...", latestVersion), func() error {
-		client := &http.Client{Timeout: 60 * time.Second}
-		resp, err := client.Get(downloadURL)
-		if err != nil {
-			return err
+		client := &http.Client{Timeout: 120 * time.Second}
+		resp, rerr := client.Get(asset.BrowserDownloadURL)
+		if rerr != nil {
+			return rerr
 		}
 		defer func() { _ = resp.Body.Close() }()
-
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("download failed: HTTP %d", resp.StatusCode)
 		}
-
-		data, err = io.ReadAll(resp.Body)
-		return err
+		data, rerr = io.ReadAll(resp.Body)
+		return rerr
 	})
 	if err != nil {
 		return fmt.Errorf("failed to download update: %w", err)
 	}
 
-	if err := os.WriteFile(execPath, data, 0755); err != nil {
-		return fmt.Errorf("failed to update binary: %w", err)
+	// O asset é um archive — extrai o binário antes de trocar (gravar o .tar.gz cru
+	// por cima do executável corromperia o CLI).
+	bin, err := archive.ExtractBinary(data, asset.Name, binaryName(runtime.GOOS))
+	if err != nil {
+		return fmt.Errorf("failed to extract binary from %s: %w", asset.Name, err)
+	}
+
+	if err := replaceExecutable(execPath, bin); err != nil {
+		if errors.Is(err, fs.ErrPermission) {
+			// Path gerenciado por root (ex.: /usr/local/bin) — não dá pra trocar sem sudo.
+			// Em vez de falhar, mostra o comando manual exato (sem nunca corromper o binário).
+			printManualUpgrade(asset, latestVersion, execPath)
+			return nil
+		}
+		return fmt.Errorf("failed to replace binary: %w", err)
 	}
 
 	ui.PrintSuccess(fmt.Sprintf("Upgraded to v%s", latestVersion))
 	return nil
+}
+
+// assetSuffix devolve o sufixo do nome do asset do goreleaser para um GOOS/GOARCH —
+// linux/amd64 → "_linux_x86_64.tar.gz", darwin/arm64 → "_darwin_arm64.tar.gz",
+// windows/amd64 → "_windows_x86_64.zip". Espelha o name_template do .goreleaser.yaml
+// (amd64→x86_64; .zip só no Windows). Mantido puro pra ser testável sem rede.
+func assetSuffix(goos, goarch string) string {
+	arch := goarch
+	if arch == "amd64" {
+		arch = "x86_64"
+	}
+	ext := "tar.gz"
+	if goos == "windows" {
+		ext = "zip"
+	}
+	return fmt.Sprintf("_%s_%s.%s", goos, arch, ext)
+}
+
+// binaryName é o nome do executável dentro do archive.
+func binaryName(goos string) string {
+	if goos == "windows" {
+		return "upuai.exe"
+	}
+	return "upuai"
+}
+
+// replaceExecutable troca o binário em execPath de forma atômica: grava num temp no
+// MESMO diretório (rename atômico exige mesmo filesystem), chmod 0755 e renomeia por
+// cima. No Windows não dá pra sobrescrever um .exe em uso, então renomeia o atual pra
+// .old antes. Devolve fs.ErrPermission (não-embrulhado) quando o diretório não é
+// gravável, pra o caller cair no fallback manual.
+func replaceExecutable(execPath string, data []byte) error {
+	dir := filepath.Dir(execPath)
+	tmp, err := os.CreateTemp(dir, ".upuai-upgrade-*")
+	if err != nil {
+		return err // ErrPermission quando o dir é de root
+	}
+	tmpPath := tmp.Name()
+	defer func() {
+		if _, statErr := os.Stat(tmpPath); statErr == nil {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpPath, 0o755); err != nil {
+		return err
+	}
+	if runtime.GOOS == "windows" {
+		_ = os.Rename(execPath, execPath+".old")
+	}
+	return os.Rename(tmpPath, execPath)
+}
+
+// printManualUpgrade imprime o comando exato pra atualizar quando a troca in-process
+// não é possível (path de root). Usa o asset/tag corretos já resolvidos.
+func printManualUpgrade(asset githubAsset, version, execPath string) {
+	ui.PrintWarning(fmt.Sprintf("Cannot replace %s without elevated permissions.", execPath))
+	fmt.Println()
+	ui.PrintInfo(fmt.Sprintf("Upgrade to v%s manually:", version))
+	fmt.Println()
+	if strings.HasSuffix(asset.Name, ".zip") {
+		fmt.Printf("  curl -sSfL %s -o upuai.zip && unzip -o upuai.zip upuai.exe\n", asset.BrowserDownloadURL)
+		return
+	}
+	fmt.Printf("  curl -sSfL %s | tar -xz upuai\n", asset.BrowserDownloadURL)
+	fmt.Printf("  sudo mv upuai %s\n", execPath)
 }
 
 func init() {

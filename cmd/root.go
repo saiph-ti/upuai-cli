@@ -106,11 +106,61 @@ func requireAuth() error {
 }
 
 func requireProject() (string, error) {
-	id := getProjectID()
-	if id == "" {
+	ref := getProjectID()
+	if ref == "" {
 		return "", errNoProject
 	}
-	return id, nil
+	// Só o flag -p pode trazer um NOME de projeto; a config linkada (.upuai/config.json)
+	// já guarda o ID canônico que init/link gravaram. Resolver a config seria uma chamada
+	// de rede inútil — então o fast-path devolve o ID linkado direto.
+	if flagProject == "" {
+		return ref, nil
+	}
+	return resolveProjectRef(ref)
+}
+
+// resolveProjectRef traduz o valor de -p (ID ou nome) para o ID canônico do projeto,
+// listando os projetos do tenant. Espelha resolveServiceContext/resolveEnvironmentID,
+// que já fazem o mesmo pra serviço/ambiente. Usado só quando -p foi passado.
+func resolveProjectRef(ref string) (string, error) {
+	client := api.NewClient()
+	projects, err := client.ListProjects()
+	if err != nil {
+		return "", fmt.Errorf("resolve project %q: %w", ref, err)
+	}
+	return matchProjectRef(projects, ref)
+}
+
+// matchProjectRef resolve uma referência de projeto (ID ou nome, case-insensitive)
+// contra a lista do tenant. Um ID exato sempre vence. Nome de projeto NÃO é único por
+// tenant (sem @unique no schema), então mais de um match por nome é reportado como
+// ambíguo — listando os IDs — em vez de escolher um silenciosamente (pedido explícito
+// do cliente por erro melhor). Zero match devolve o ref inalterado: um ID válido fora
+// da página listada continua passando direto pra API, e um nome inexistente reproduz o
+// 404 atual da API (mudança 100% aditiva, zero-regressão pra quem já usa ID).
+func matchProjectRef(projects []api.Project, ref string) (string, error) {
+	var byName []api.Project
+	for _, p := range projects {
+		if p.ID == ref {
+			return p.ID, nil
+		}
+		if strings.EqualFold(p.Name, ref) || (p.Slug != "" && strings.EqualFold(p.Slug, ref)) {
+			byName = append(byName, p)
+		}
+	}
+	switch len(byName) {
+	case 1:
+		return byName[0].ID, nil
+	case 0:
+		return ref, nil
+	default:
+		var b strings.Builder
+		for _, p := range byName {
+			fmt.Fprintf(&b, "\n  • %s  (%s)", p.Name, p.ID)
+		}
+		return "", fmt.Errorf("project name %q is ambiguous (%d matches) — pass the project ID instead:%s",
+			ref, len(byName), b.String())
+	}
 }
 
 func requireServiceConfig() (string, string, error) {

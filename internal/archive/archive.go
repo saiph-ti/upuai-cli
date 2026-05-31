@@ -4,12 +4,15 @@ package archive
 
 import (
 	"archive/tar"
+	"archive/zip"
+	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -117,6 +120,72 @@ func Pack(dir string) (path string, sha256hex string, size int64, err error) {
 		return "", "", 0, fmt.Errorf("stat archive: %w", err)
 	}
 	return tmpPath, hex.EncodeToString(hasher.Sum(nil)), st.Size(), nil
+}
+
+// ExtractBinary devolve os bytes do executável `binaryName` de dentro de um arquivo
+// `.tar.gz` ou `.zip` (detectado pelo sufixo de `assetName`). É usado pelo self-update
+// (`upuai upgrade`) pra extrair o binário do release do GitHub — os assets do goreleaser
+// são archives, não binários soltos, então gravar o asset cru por cima do executável
+// (bug antigo) corrompia o CLI. Acha a entry cujo basename == binaryName.
+func ExtractBinary(data []byte, assetName, binaryName string) ([]byte, error) {
+	switch {
+	case strings.HasSuffix(assetName, ".zip"):
+		return extractFromZip(data, binaryName)
+	case strings.HasSuffix(assetName, ".tar.gz"), strings.HasSuffix(assetName, ".tgz"):
+		return extractFromTarGz(data, binaryName)
+	default:
+		return nil, fmt.Errorf("unsupported archive %q (want .tar.gz or .zip)", assetName)
+	}
+}
+
+func extractFromTarGz(data []byte, binaryName string) ([]byte, error) {
+	gz, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("open gzip: %w", err)
+	}
+	defer func() { _ = gz.Close() }()
+	tr := tar.NewReader(gz)
+	for {
+		hdr, nextErr := tr.Next()
+		if nextErr == io.EOF {
+			break
+		}
+		if nextErr != nil {
+			return nil, fmt.Errorf("read tar: %w", nextErr)
+		}
+		if hdr.Typeflag != tar.TypeReg || path.Base(hdr.Name) != binaryName {
+			continue
+		}
+		b, readErr := io.ReadAll(tr)
+		if readErr != nil {
+			return nil, fmt.Errorf("read %q: %w", binaryName, readErr)
+		}
+		return b, nil
+	}
+	return nil, fmt.Errorf("binary %q not found in archive", binaryName)
+}
+
+func extractFromZip(data []byte, binaryName string) ([]byte, error) {
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return nil, fmt.Errorf("open zip: %w", err)
+	}
+	for _, f := range zr.File {
+		if f.FileInfo().IsDir() || path.Base(f.Name) != binaryName {
+			continue
+		}
+		rc, openErr := f.Open()
+		if openErr != nil {
+			return nil, fmt.Errorf("open %q: %w", binaryName, openErr)
+		}
+		b, readErr := io.ReadAll(rc)
+		_ = rc.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("read %q: %w", binaryName, readErr)
+		}
+		return b, nil
+	}
+	return nil, fmt.Errorf("binary %q not found in archive", binaryName)
 }
 
 func loadIgnorePatterns(dir string) []string {
