@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/upuai-cloud/cli/internal/api"
@@ -82,26 +81,24 @@ Examples:
 func parseRunArgs(args []string) (serviceRef string, cmdArgs []string, showHelp bool, err error) {
 	for i := 0; i < len(args); i++ {
 		a := args[i]
-		switch {
-		case a == "--":
-			cmdArgs = args[i+1:]
-			return serviceRef, cmdArgs, false, nil
-		case a == "-h" || a == "--help":
-			return "", nil, true, nil
-		case a == "-s" || a == "--service":
-			if i+1 >= len(args) {
-				return "", nil, false, fmt.Errorf("flag %s requires a value", a)
-			}
-			serviceRef = args[i+1]
-			i++
-		case strings.HasPrefix(a, "--service="):
-			serviceRef = strings.TrimPrefix(a, "--service=")
-		case strings.HasPrefix(a, "-s="):
-			serviceRef = strings.TrimPrefix(a, "-s=")
-		default:
-			cmdArgs = args[i:]
-			return serviceRef, cmdArgs, false, nil
+		if a == "--" {
+			return serviceRef, args[i+1:], false, nil
 		}
+		if a == "-h" || a == "--help" {
+			return "", nil, true, nil
+		}
+		// Consume upuai's own leading flags (-p/-e/-o/-s/-y/-v incl. =forms). With
+		// DisableFlagParsing on, cobra won't parse the persistent -p/-e, so without
+		// this `upuai run -p X -e Y -- cmd` dropped them and used the linked service.
+		if consumed, matched, ferr := consumeLeadingFlag(args, i, &serviceRef); matched {
+			if ferr != nil {
+				return "", nil, false, ferr
+			}
+			i += consumed - 1
+			continue
+		}
+		// First non-flag (or unknown flag) → everything from here is the command.
+		return serviceRef, args[i:], false, nil
 	}
 	return serviceRef, cmdArgs, false, nil
 }

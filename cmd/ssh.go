@@ -60,24 +60,25 @@ Examples:
 func parseSSHArgs(args []string) (serviceRef string, command []string, showHelp bool, err error) {
 	for i := 0; i < len(args); i++ {
 		a := args[i]
-		switch {
-		case a == "--":
+		if a == "--" {
 			return serviceRef, args[i+1:], false, nil
-		case a == "-h" || a == "--help":
-			return "", nil, true, nil
-		case a == "-s" || a == "--service":
-			if i+1 >= len(args) {
-				return "", nil, false, fmt.Errorf("flag %s requires a value", a)
-			}
-			serviceRef = args[i+1]
-			i++
-		case strings.HasPrefix(a, "--service="):
-			serviceRef = strings.TrimPrefix(a, "--service=")
-		case strings.HasPrefix(a, "-s="):
-			serviceRef = strings.TrimPrefix(a, "-s=")
-		default:
-			return serviceRef, args[i:], false, nil
 		}
+		if a == "-h" || a == "--help" {
+			return "", nil, true, nil
+		}
+		// Consume upuai's own leading flags (-p/-e/-o/-s/-y/-v incl. =forms). They
+		// would otherwise be swallowed into the command because DisableFlagParsing is
+		// on (cobra won't parse the persistent -p/-e here).
+		if consumed, matched, ferr := consumeLeadingFlag(args, i, &serviceRef); matched {
+			if ferr != nil {
+				return "", nil, false, ferr
+			}
+			i += consumed - 1
+			continue
+		}
+		// First non-flag (or unknown flag) → everything from here is the command,
+		// forwarded verbatim (so `rails console -e production` keeps its own flags).
+		return serviceRef, args[i:], false, nil
 	}
 	return serviceRef, command, false, nil
 }

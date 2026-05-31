@@ -189,6 +189,64 @@ func resolveEnvironmentID(client *api.Client, projectID string) (string, error) 
 	return "", fmt.Errorf("environment %q not found in project", envName)
 }
 
+// consumeLeadingFlag handles upuai's OWN flags that appear before the passthrough
+// command in DisableFlagParsing commands (`ssh`, `run`). Because those commands turn
+// off cobra flag parsing (so they don't eat flags meant for the remote/subprocess
+// program, e.g. `rails console -e production`), cobra never populates the persistent
+// flag globals. Without this, `upuai ssh -p adv-os -s web -- cmd` silently dropped
+// -p/-e and fell back to the linked service. This recognizes the value-taking flags
+// (-p/--project, -e/--environment, -o/--output, -s/--service, incl. --name=value /
+// -x=value forms) and the boolean flags (-y/--yes, -v/--verbose), setting the same
+// globals cobra would, so the rest of the CLI (getProjectID/resolveEnvironmentID/…)
+// behaves identically to a normally-parsed command. serviceRef is threaded out via a
+// pointer because it is command-local (not a persistent flag).
+//
+// Returns: consumed = number of args used (1 for =form/boolean, 2 for "-x value");
+// matched = whether `a` was a known upuai flag; err = a value-required error.
+func consumeLeadingFlag(args []string, i int, serviceRef *string) (consumed int, matched bool, err error) {
+	a := args[i]
+	valueFlags := []struct {
+		names []string
+		set   func(string)
+	}{
+		{[]string{"-p", "--project"}, func(v string) { flagProject = v }},
+		{[]string{"-e", "--environment"}, func(v string) { flagEnvironment = v }},
+		{[]string{"-o", "--output"}, func(v string) { flagOutput = v }},
+		{[]string{"-s", "--service"}, func(v string) { *serviceRef = v }},
+	}
+	for _, vf := range valueFlags {
+		for _, n := range vf.names {
+			if a == n {
+				if i+1 >= len(args) {
+					return 0, true, fmt.Errorf("flag %s requires a value", n)
+				}
+				vf.set(args[i+1])
+				return 2, true, nil
+			}
+			if strings.HasPrefix(a, n+"=") {
+				vf.set(strings.TrimPrefix(a, n+"="))
+				return 1, true, nil
+			}
+		}
+	}
+	boolFlags := []struct {
+		names []string
+		set   func()
+	}{
+		{[]string{"-y", "--yes"}, func() { flagYes = true }},
+		{[]string{"-v", "--verbose"}, func() { flagVerbose = true }},
+	}
+	for _, bf := range boolFlags {
+		for _, n := range bf.names {
+			if a == n {
+				bf.set()
+				return 1, true, nil
+			}
+		}
+	}
+	return 0, false, nil
+}
+
 var (
 	errNotAuthenticated = &cmdError{"not authenticated — run 'upuai login' first"}
 	errNoProject        = &cmdError{"no project linked — run 'upuai init' or 'upuai link' first"}
