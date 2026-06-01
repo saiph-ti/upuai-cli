@@ -12,8 +12,10 @@ type AppService struct {
 }
 
 type CreateServiceRequest struct {
-	Name          string               `json:"name"`
-	Type          string               `json:"type"`
+	Name string `json:"name"`
+	Type string `json:"type"`
+	// WorkloadKind: "" (web, default) | "worker". Ortogonal ao Type (source).
+	WorkloadKind  string               `json:"workloadKind,omitempty"`
 	EnvironmentID string               `json:"environmentId"`
 	Source        *ServiceSourceConfig `json:"source,omitempty"`
 }

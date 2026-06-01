@@ -13,6 +13,8 @@ import (
 var (
 	variablesService string
 	variablesScope   string
+	variablesProject bool
+	variablesShared  bool
 )
 
 // validEnvVarScopes mapeia o input do usuário (case-insensitive) pro valor
@@ -23,20 +25,68 @@ var validEnvVarScopes = map[string]string{
 	"build":   "BUILD",
 }
 
+// varTarget descreve a camada-alvo das variáveis compartilhadas. Default =
+// serviço; --shared = ambiente (todos os serviços do env); --project = global.
+// Precedência na resolução do deploy: Serviço > Ambiente > Projeto.
+type varTarget struct {
+	layer     string // "service" | "environment" | "project"
+	envID     string
+	serviceID string
+	projectID string
+	label     string
+}
+
+func resolveVarTarget() (*varTarget, error) {
+	if variablesProject && variablesShared {
+		return nil, fmt.Errorf("use only one of --project or --shared")
+	}
+	switch {
+	case variablesProject:
+		pid, err := requireProject()
+		if err != nil {
+			return nil, err
+		}
+		return &varTarget{layer: "project", projectID: pid, label: "project (all environments)"}, nil
+	case variablesShared:
+		pid, err := requireProject()
+		if err != nil {
+			return nil, err
+		}
+		client := api.NewClient()
+		envID, err := resolveEnvironmentID(client, pid)
+		if err != nil {
+			return nil, err
+		}
+		return &varTarget{layer: "environment", envID: envID, label: "environment (shared)"}, nil
+	default:
+		envID, serviceID, err := resolveServiceContext(variablesService)
+		if err != nil {
+			return nil, err
+		}
+		return &varTarget{layer: "service", envID: envID, serviceID: serviceID, label: "service"}, nil
+	}
+}
+
 var variablesCmd = &cobra.Command{
 	Use:     "variables",
 	Aliases: []string{"vars", "variable"},
 	Short:   "Manage environment variables",
-	Long: `Manage environment variables for the linked service (or another service via -s).
+	Long: `Manage environment variables in three layers (most specific wins on deploy:
+service > environment > project):
+
+  (default)    service-level — only this service
+  --shared     environment-level — inherited by every service in the environment
+  --project    project-level (global) — same value across all environments
 
 Examples:
   upuai variables list
-  upuai variables list -s api
+  upuai variables list --shared
   upuai variables set KEY=VALUE
-  upuai variables set KEY1=VALUE1 KEY2=VALUE2
-  upuai variables set DATABASE_URL=... --scope runtime   # fora do build
-  upuai variables set NPM_TOKEN=... --scope build         # fora do runtime
-  upuai variables delete KEY`,
+  upuai variables set DATABASE_URL=... --shared            # shared by the env
+  upuai variables set PUBLIC_ID=... --project              # global to the project
+  upuai variables set DATABASE_URL=... --scope runtime     # not in build
+  upuai variables set NPM_TOKEN=... --scope build          # not in runtime
+  upuai variables delete KEY --shared`,
 }
 
 var variablesListCmd = &cobra.Command{
@@ -47,7 +97,7 @@ var variablesListCmd = &cobra.Command{
 			return err
 		}
 
-		envID, serviceID, err := resolveServiceContext(variablesService)
+		t, err := resolveVarTarget()
 		if err != nil {
 			return err
 		}
@@ -57,7 +107,14 @@ var variablesListCmd = &cobra.Command{
 		var vars []api.EnvVar
 		err = ui.RunWithSpinner("Loading variables...", func() error {
 			var fetchErr error
-			vars, fetchErr = client.ListVariables(envID, serviceID)
+			switch t.layer {
+			case "project":
+				vars, fetchErr = client.ListProjectVariables(t.projectID)
+			case "environment":
+				vars, fetchErr = client.ListEnvironmentVariables(t.envID)
+			default:
+				vars, fetchErr = client.ListVariables(t.envID, t.serviceID)
+			}
 			return fetchErr
 		})
 		if err != nil {
@@ -71,7 +128,7 @@ var variablesListCmd = &cobra.Command{
 		}
 
 		if len(vars) == 0 {
-			ui.PrintInfo("No variables configured")
+			ui.PrintInfo(fmt.Sprintf("No variables configured (%s)", t.label))
 			return nil
 		}
 
@@ -104,7 +161,7 @@ var variablesSetCmd = &cobra.Command{
 			return err
 		}
 
-		envID, serviceID, err := resolveServiceContext(variablesService)
+		t, err := resolveVarTarget()
 		if err != nil {
 			return err
 		}
@@ -141,7 +198,14 @@ var variablesSetCmd = &cobra.Command{
 		var result []api.EnvVar
 		err = ui.RunWithSpinner("Setting variables...", func() error {
 			var setErr error
-			result, setErr = client.SetVariables(envID, serviceID, vars)
+			switch t.layer {
+			case "project":
+				result, setErr = client.SetProjectVariables(t.projectID, vars)
+			case "environment":
+				result, setErr = client.SetEnvironmentVariables(t.envID, vars)
+			default:
+				result, setErr = client.SetVariables(t.envID, t.serviceID, vars)
+			}
 			return setErr
 		})
 		if err != nil {
@@ -155,11 +219,15 @@ var variablesSetCmd = &cobra.Command{
 		}
 
 		for _, v := range vars {
+			suffix := fmt.Sprintf(" [%s]", t.label)
 			if v.Scope != "" && v.Scope != "BOTH" {
-				ui.PrintSuccess(fmt.Sprintf("Set %s (scope: %s)", v.Key, strings.ToLower(v.Scope)))
+				ui.PrintSuccess(fmt.Sprintf("Set %s (scope: %s)%s", v.Key, strings.ToLower(v.Scope), suffix))
 			} else {
-				ui.PrintSuccess(fmt.Sprintf("Set %s", v.Key))
+				ui.PrintSuccess(fmt.Sprintf("Set %s%s", v.Key, suffix))
 			}
+		}
+		if t.layer != "service" {
+			ui.PrintInfo("Redeploy the affected services to apply these changes.")
 		}
 		return nil
 	},
@@ -174,7 +242,7 @@ var variablesDeleteCmd = &cobra.Command{
 			return err
 		}
 
-		envID, serviceID, err := resolveServiceContext(variablesService)
+		t, err := resolveVarTarget()
 		if err != nil {
 			return err
 		}
@@ -182,7 +250,7 @@ var variablesDeleteCmd = &cobra.Command{
 		key := args[0]
 
 		if !flagYes {
-			confirmed, err := ui.Confirm(fmt.Sprintf("Delete variable %q?", key))
+			confirmed, err := ui.Confirm(fmt.Sprintf("Delete variable %q (%s)?", key, t.label))
 			if err != nil {
 				return err
 			}
@@ -195,7 +263,14 @@ var variablesDeleteCmd = &cobra.Command{
 		client := api.NewClient()
 
 		err = ui.RunWithSpinner("Deleting variable...", func() error {
-			return client.DeleteVariable(envID, serviceID, key)
+			switch t.layer {
+			case "project":
+				return client.DeleteProjectVariable(t.projectID, key)
+			case "environment":
+				return client.DeleteEnvironmentVariable(t.envID, key)
+			default:
+				return client.DeleteVariable(t.envID, t.serviceID, key)
+			}
 		})
 		if err != nil {
 			return fmt.Errorf("failed to delete variable: %w", err)
@@ -208,6 +283,8 @@ var variablesDeleteCmd = &cobra.Command{
 
 func init() {
 	variablesCmd.PersistentFlags().StringVarP(&variablesService, "service", "s", "", "Service name, slug, or ID (overrides linked service)")
+	variablesCmd.PersistentFlags().BoolVar(&variablesProject, "project", false, "Target project-level variables (global to all environments)")
+	variablesCmd.PersistentFlags().BoolVar(&variablesShared, "shared", false, "Target environment-level variables (shared by all services in the environment)")
 	variablesSetCmd.Flags().StringVar(&variablesScope, "scope", "", "Injection phase: both (default) | runtime (not in build) | build (not in runtime)")
 	variablesCmd.AddCommand(variablesListCmd)
 	variablesCmd.AddCommand(variablesSetCmd)

@@ -110,7 +110,7 @@ Then ask the agent in natural language: *"deploy this to upuai"*. Full guide and
 
 | Command | Description |
 |---------|-------------|
-| `add` | Add a new service to the project (interactive wizard). `--type database` provisions a **managed** Postgres/Redis/MySQL/Mongo via template (connection vars injected automatically); use `--engine` to skip the picker |
+| `add` | Add a new service to the project (interactive wizard). `--type database` provisions a **managed** Postgres/Redis/MySQL/Mongo via template (connection vars injected automatically); use `--engine` to skip the picker. Add `--worker` (with `--repo`/`--image`) to create a **background worker** (no HTTP/domain — Sidekiq/Celery/BullMQ) |
 | `restart` | Restart the linked service |
 | `logs` | View service logs |
 | `scale` | Scale service to N replicas |
@@ -140,14 +140,24 @@ Then ask the agent in natural language: *"deploy this to upuai"*. Full guide and
 
 | Command | Alias | Description |
 |---------|-------|-------------|
-| `variables list` | `vars list` | List all environment variables |
-| `variables set KEY=VALUE...` | `vars set` | Set one or more environment variables. `--scope both\|runtime\|build` controls injection phase (default `both`; `runtime` = not exposed during build; `build` = not in the running container) |
-| `variables delete KEY` | `vars delete` | Delete an environment variable |
+| `variables list` | `vars list` | List all environment variables. `--shared` lists the **environment-level** layer; `--project` the **project-level** (global) layer |
+| `variables set KEY=VALUE...` | `vars set` | Set variables. `--scope both\|runtime\|build` controls injection phase. `--shared` targets the **environment** layer (inherited by every service); `--project` the **project** layer (global to all environments). Default = this service. Precedence on deploy: service > environment > project |
+| `variables delete KEY` | `vars delete` | Delete a variable (`--shared`/`--project` for the shared layers) |
 | `domain list` | `domains list` | List custom domains |
 | `domain add <domain>` | `domains add` | Add a custom domain |
 | `domain delete <domain-id>` | `domains delete` | Delete a custom domain |
 
-`variables`, `run`, `shell`, and `ssh` accept `-s/--service <name|slug|id>` to target a service other than the linked one (paridade com `railway variable list -s Postgres`).
+### Scheduler (cron)
+
+| Command | Alias | Description |
+|---------|-------|-------------|
+| `scheduler list` | `cron list` | List scheduled jobs for the service |
+| `scheduler create --name <n> --command <cmd> --schedule "<cron>"` | `cron create` | Create a cron job (runs with the service's deployed image). `--timeout <secs>` optional |
+| `scheduler run <name\|id>` | `cron run` | Trigger a one-off run now |
+| `scheduler pause <name\|id>` / `resume` | `cron pause`/`resume` | Pause / resume the schedule |
+| `scheduler delete <name\|id>` | `cron delete` | Delete a scheduled job |
+
+`variables`, `scheduler`, `run`, `shell`, and `ssh` accept `-s/--service <name|slug|id>` to target a service other than the linked one (paridade com `railway variable list -s Postgres`).
 
 > **`run`/`shell` vs `ssh`**: `run`/`shell` execute **locally** with the service's env vars injected (like `railway run`). `ssh` opens a session **inside the running production container** (like `railway ssh` / `fly ssh console`) — use it for `rails console`, `manage.py shell`, one-off maintenance, or debugging in the live pod.
 

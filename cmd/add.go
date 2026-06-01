@@ -32,6 +32,7 @@ const defaultBucketRegion = "us-east-1"
 
 var (
 	flagAddType               string
+	flagAddWorker             bool
 	flagAddName               string
 	flagAddEngine             string
 	flagAddImage              string
@@ -57,6 +58,7 @@ Examples:
   upuai add
   upuai add --type database --name postgres
   upuai add --type github --name api --repo org/repo --branch main
+  upuai add --name worker --repo org/repo --worker --start-command "bundle exec sidekiq"
   upuai add --type github --name api --repo https://github.com/org/monorepo --root-dir apps/api --builder dockerfile --dockerfile-path apps/api/Dockerfile`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := requireAuth(); err != nil {
@@ -207,12 +209,25 @@ Examples:
 			source = &api.ServiceSourceConfig{RootDirectory: git.NormalizeRootDir(flagAddRootDir)}
 		}
 
+		// --worker: background sem HTTP/domínio. Ortogonal ao type (source). Exige
+		// um source de código (github/gitlab/docker) — não faz sentido em db/bucket.
+		workloadKind := ""
+		if flagAddWorker {
+			switch serviceType {
+			case "github", "gitlab", "docker", "docker_image":
+				workloadKind = "worker"
+			default:
+				return fmt.Errorf("--worker requires a code source: use --repo (github/gitlab) or --image (docker)")
+			}
+		}
+
 		var service *api.AppService
 		err = ui.RunWithSpinner("Creating service...", func() error {
 			var createErr error
 			service, createErr = client.CreateService(projectID, &api.CreateServiceRequest{
 				Name:          name,
 				Type:          serviceType,
+				WorkloadKind:  workloadKind,
 				EnvironmentID: cfg.EnvironmentID,
 				Source:        source,
 			})
@@ -400,6 +415,7 @@ func pickDatabaseTemplate(templates []api.DatabaseTemplate, engine string) (*api
 
 func init() {
 	addCmd.Flags().StringVar(&flagAddType, "type", "", "Service type: app, bucket, database, docker, docker image, function, github, gitlab")
+	addCmd.Flags().BoolVar(&flagAddWorker, "worker", false, "Create a background worker (no HTTP/domain) — combine with --repo or --image")
 	addCmd.Flags().StringVar(&flagAddName, "name", "", "Service name (skips prompt)")
 	addCmd.Flags().StringVar(&flagAddEngine, "engine", "", "Managed database engine (postgres, redis, mysql, mongo) — used with --type database to skip the picker")
 	addCmd.Flags().StringVar(&flagAddImage, "image", "", "Docker image to deploy (e.g. nginx:latest) — sets type to docker_image")
