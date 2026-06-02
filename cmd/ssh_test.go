@@ -20,6 +20,7 @@ func TestParseSSHArgs(t *testing.T) {
 		name        string
 		args        []string
 		wantSvcRef  string
+		wantProcess string
 		wantCommand []string
 		wantHelp    bool
 		wantProject string
@@ -70,6 +71,19 @@ func TestParseSSHArgs(t *testing.T) {
 			wantProject: "adv-os",
 		},
 		{
+			name:        "--process consumed, command preserved",
+			args:        []string{"-s", "api", "--process", "worker", "--", "sh"},
+			wantSvcRef:  "api",
+			wantProcess: "worker",
+			wantCommand: []string{"sh"},
+		},
+		{
+			name:        "--process=value form",
+			args:        []string{"--process=clock", "--", "date"},
+			wantProcess: "clock",
+			wantCommand: []string{"date"},
+		},
+		{
 			name:     "help short",
 			args:     []string{"-h"},
 			wantHelp: true,
@@ -78,7 +92,7 @@ func TestParseSSHArgs(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			resetLeadingFlagGlobals()
-			ref, cmd, help, err := parseSSHArgs(tc.args)
+			ref, process, cmd, help, err := parseSSHArgs(tc.args)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -90,6 +104,9 @@ func TestParseSSHArgs(t *testing.T) {
 			}
 			if ref != tc.wantSvcRef {
 				t.Errorf("serviceRef = %q, want %q", ref, tc.wantSvcRef)
+			}
+			if process != tc.wantProcess {
+				t.Errorf("process = %q, want %q", process, tc.wantProcess)
 			}
 			if !reflect.DeepEqual(cmd, tc.wantCommand) {
 				t.Errorf("command = %#v, want %#v", cmd, tc.wantCommand)
@@ -106,7 +123,10 @@ func TestParseSSHArgs(t *testing.T) {
 
 func TestParseSSHArgs_MissingFlagValue(t *testing.T) {
 	resetLeadingFlagGlobals()
-	if _, _, _, err := parseSSHArgs([]string{"-s"}); err == nil {
+	if _, _, _, _, err := parseSSHArgs([]string{"-s"}); err == nil {
 		t.Fatal("expected error for -s without a value")
+	}
+	if _, _, _, _, err := parseSSHArgs([]string{"--process"}); err == nil {
+		t.Fatal("expected error for --process without a value")
 	}
 }

@@ -27,15 +27,19 @@ run any program, or a shell if no command is given.
 The "--" separator is optional; everything after the first non-flag argument is
 forwarded verbatim as the command to run in the container.
 
+Use --process to target a single process of a multi-process service (default:
+web; see "upuai ps").
+
 Examples:
   upuai ssh                          # interactive shell in the linked service
   upuai ssh -s api                   # shell in service "api"
+  upuai ssh --process worker         # shell in the "worker" process
   upuai ssh -s api -- bin/rails console
   upuai ssh -- python manage.py shell
   upuai ssh -- node`,
 	DisableFlagParsing: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		serviceRef, command, showHelp, err := parseSSHArgs(args)
+		serviceRef, process, command, showHelp, err := parseSSHArgs(args)
 		if err != nil {
 			return err
 		}
@@ -49,45 +53,60 @@ Examples:
 		if err != nil {
 			return err
 		}
-		return runSSH(envID, serviceID, command)
+		return runSSH(envID, serviceID, process, command)
 	},
 }
 
-// parseSSHArgs separa as flags próprias do `ssh` (-s/--service, -h) do comando a
-// rodar no container. Igual ao parseRunArgs: tudo após "--" (ou após o primeiro
-// não-flag) é o comando, verbatim. DisableFlagParsing impede o cobra de comer
-// flags destinadas ao programa remoto (ex: `rails console -e production`).
-func parseSSHArgs(args []string) (serviceRef string, command []string, showHelp bool, err error) {
+// parseSSHArgs separa as flags próprias do `ssh` (-s/--service, --process, -h) do
+// comando a rodar no container. Igual ao parseRunArgs: tudo após "--" (ou após o
+// primeiro não-flag) é o comando, verbatim. DisableFlagParsing impede o cobra de
+// comer flags destinadas ao programa remoto (ex: `rails console -e production`).
+func parseSSHArgs(args []string) (serviceRef, process string, command []string, showHelp bool, err error) {
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if a == "--" {
-			return serviceRef, args[i+1:], false, nil
+			return serviceRef, process, args[i+1:], false, nil
 		}
 		if a == "-h" || a == "--help" {
-			return "", nil, true, nil
+			return "", "", nil, true, nil
+		}
+		// --process is ssh-specific (not a persistent flag), so it is handled here
+		// rather than in consumeLeadingFlag. Supports "--process name" and
+		// "--process=name".
+		if a == "--process" {
+			if i+1 >= len(args) {
+				return "", "", nil, false, fmt.Errorf("flag --process requires a value")
+			}
+			process = args[i+1]
+			i++
+			continue
+		}
+		if v, ok := strings.CutPrefix(a, "--process="); ok {
+			process = v
+			continue
 		}
 		// Consume upuai's own leading flags (-p/-e/-o/-s/-y/-v incl. =forms). They
 		// would otherwise be swallowed into the command because DisableFlagParsing is
 		// on (cobra won't parse the persistent -p/-e here).
 		if consumed, matched, ferr := consumeLeadingFlag(args, i, &serviceRef); matched {
 			if ferr != nil {
-				return "", nil, false, ferr
+				return "", "", nil, false, ferr
 			}
 			i += consumed - 1
 			continue
 		}
 		// First non-flag (or unknown flag) → everything from here is the command,
 		// forwarded verbatim (so `rails console -e production` keeps its own flags).
-		return serviceRef, args[i:], false, nil
+		return serviceRef, process, args[i:], false, nil
 	}
-	return serviceRef, command, false, nil
+	return serviceRef, process, command, false, nil
 }
 
 // runSSH dials the API's exec WebSocket and bridges the local terminal to the
 // remote PTY. Framing (mesma do orchestrator): binary = stdin/stdout; text JSON
 // = controle ({"type":"resize",...} no sentido cliente→server e {"type":"exit",
 // "code"|"error"} no sentido server→cliente).
-func runSSH(envID, serviceID string, command []string) error {
+func runSSH(envID, serviceID, process string, command []string) error {
 	token := config.NewCredentialStore().GetToken()
 	if token == "" {
 		return fmt.Errorf("not authenticated — run `upuai login`")
@@ -102,6 +121,9 @@ func runSSH(envID, serviceID string, command []string) error {
 	q := u.Query()
 	for _, c := range command {
 		q.Add("command", c)
+	}
+	if process != "" {
+		q.Set("process", process)
 	}
 	u.RawQuery = q.Encode()
 

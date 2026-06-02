@@ -111,12 +111,13 @@ Then ask the agent in natural language: *"deploy this to upuai"*. Full guide and
 | Command | Description |
 |---------|-------------|
 | `add` | Add a new service to the project (interactive wizard). `--type database` provisions a **managed** Postgres/Redis/MySQL/Mongo via template (connection vars injected automatically); use `--engine` to skip the picker. Add `--worker` (with `--repo`/`--image`) to create a **background worker** (no HTTP/domain — Sidekiq/Celery/BullMQ) |
-| `restart` | Restart the linked service |
-| `logs` | View service logs |
-| `scale` | Scale service to N replicas |
+| `ps` | List the service's processes (web, worker, clock, release) of a multi-process / Procfile service. Aliases: `processes`, `process` |
+| `restart` | Restart the linked service. `--process <name>` restarts a single process of a multi-process service |
+| `logs` | View service logs. `--process <name>` scopes runtime logs to one process of a multi-process service |
+| `scale` | Scale the service to N replicas (`upuai scale 3`), or individual processes (`upuai scale web=2 worker=1`) |
 | `run` | Run a command **locally** with service environment variables injected |
 | `shell` | Open a **local** subshell with service environment variables injected |
-| `ssh` | Open an interactive shell (or run a command) **inside the running container** — `upuai ssh -s api -- bin/rails console`. Generic/stack-agnostic; backed by a K8s PTY exec |
+| `ssh` | Open an interactive shell (or run a command) **inside the running container** — `upuai ssh -s api -- bin/rails console`. `--process <name>` targets one process of a multi-process service. Generic/stack-agnostic; backed by a K8s PTY exec |
 
 ### Database
 
@@ -157,7 +158,7 @@ Then ask the agent in natural language: *"deploy this to upuai"*. Full guide and
 | `scheduler pause <name\|id>` / `resume` | `cron pause`/`resume` | Pause / resume the schedule |
 | `scheduler delete <name\|id>` | `cron delete` | Delete a scheduled job |
 
-`variables`, `scheduler`, `run`, `shell`, and `ssh` accept `-s/--service <name|slug|id>` to target a service other than the linked one (paridade com `railway variable list -s Postgres`).
+`variables`, `scheduler`, `ps`, `logs`, `run`, `shell`, and `ssh` accept `-s/--service <name|slug|id>` to target a service other than the linked one (paridade com `railway variable list -s Postgres`).
 
 > **`run`/`shell` vs `ssh`**: `run`/`shell` execute **locally** with the service's env vars injected (like `railway run`). `ssh` opens a session **inside the running production container** (like `railway ssh` / `fly ssh console`) — use it for `rails console`, `manage.py shell`, one-off maintenance, or debugging in the live pod.
 
@@ -352,25 +353,48 @@ Flag reference:
 - `--repo` — `owner/repo` short form or a full GitHub **or** GitLab URL (auto-detected). With `--type`, must be `github` or `gitlab` to match.
 - `--registry-host` / `--registry-user` / `--registry-password` — credentials for a private Docker registry (used with `--image`). `--registry-user` and `--registry-password` must be supplied together.
 
+### ps
+
+```bash
+upuai ps                    # List the linked service's processes
+upuai ps -s api             # Processes of the "api" service
+upuai ps -o json            # JSON output
+```
+
+Multi-process services run several process types (web + worker + clock + release)
+from a single repo and build — Procfile / Heroku / Railway parity. The table
+shows `NAME`, `TYPE`, `REPLICAS`, and `COMMAND`. Scale individual processes with
+`upuai scale <name>=<N>` (see below).
+
 ### logs
 
 ```bash
 upuai logs                  # View service logs (default lines)
 upuai logs -n 100           # View last 100 lines
 upuai logs --lines 50       # Same as -n
+upuai logs -f               # Stream runtime logs (live tail)
+upuai logs --process worker # Runtime logs of the "worker" process only
 ```
+
+`--process` scopes **runtime** logs to one process of a multi-process service; it
+is ignored for `--build`/`--deploy`/`--timeline`.
 
 ### restart
 
 ```bash
-upuai restart               # Restart the linked service
+upuai restart                  # Restart the linked service (web)
+upuai restart --process worker # Restart only the "worker" process
 ```
 
 ### scale
 
 ```bash
-upuai scale 3               # Scale service to 3 replicas
+upuai scale 3                  # Scale the service to 3 replicas
+upuai scale web=2 worker=1     # Scale individual processes of a multi-process service
 ```
+
+A bare integer scales the whole (single-process) service. One or more
+`<process>=<count>` pairs scale individual processes (see `upuai ps`).
 
 ### run
 
@@ -478,8 +502,11 @@ Common workflows mapped to `upuai`:
 | `railway environment` | `upuai environment` (alias `env`) |
 | `railway redeploy` / `railway down` | `upuai redeploy` / `upuai down` |
 | `railway rollback` | `upuai rollback` |
+| `railway ssh` (exec into container) | `upuai ssh` |
+| `railway service` (list processes) | `upuai ps` |
+| `railway scale` (per-process) | `upuai scale web=2 worker=1` |
 
-Out of scope today: `railway ssh` (exec into container) — needs orchestrator endpoint. Managed snapshot create/list/download/restore is dashboard-only on Railway and on Upuai (CNPG runs daily scheduled backups in the cluster; CLI exposure tracked separately).
+Out of scope today: managed snapshot create/list/download/restore is dashboard-only on Railway and on Upuai (CNPG runs daily scheduled backups in the cluster; CLI exposure tracked separately).
 
 ## Detected Frameworks
 

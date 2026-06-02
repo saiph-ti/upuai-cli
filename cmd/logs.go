@@ -22,6 +22,7 @@ var (
 	logsTimeline     bool
 	logsDeploymentID string
 	logsServiceRef   string
+	logsProcess      string
 )
 
 var logsCmd = &cobra.Command{
@@ -36,9 +37,13 @@ Examples:
   upuai logs                          # last 100 runtime log lines
   upuai logs -n 200                   # last 200 runtime log lines
   upuai logs -f                       # stream runtime logs (live tail)
+  upuai logs --process worker         # runtime logs of the "worker" process
   upuai logs --build                  # build log of the latest deployment
   upuai logs --deploy                 # release-phase + rollout log of the latest deployment
-  upuai logs --build -d <deploy-id>   # build log of a specific deployment`,
+  upuai logs --build -d <deploy-id>   # build log of a specific deployment
+
+The --process flag scopes runtime logs to a single process of a multi-process
+service (see "upuai ps"); it is ignored for --build/--deploy/--timeline.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := requireAuth(); err != nil {
 			return err
@@ -74,7 +79,7 @@ func runRuntimeLogs(client *api.Client) error {
 		defer cancel()
 		ui.PrintInfo("Streaming runtime logs (Ctrl-C to stop)")
 		fmt.Println()
-		return client.StreamRuntimeLogs(ctx, envID, serviceID, func(line string) {
+		return client.StreamRuntimeLogs(ctx, envID, serviceID, logsProcess, func(line string) {
 			fmt.Println(line)
 		})
 	}
@@ -82,7 +87,7 @@ func runRuntimeLogs(client *api.Client) error {
 	var logs string
 	err = ui.RunWithSpinner("Fetching logs...", func() error {
 		var fetchErr error
-		logs, fetchErr = client.GetLogs(envID, serviceID, logsLines)
+		logs, fetchErr = client.GetLogs(envID, serviceID, logsProcess, logsLines)
 		return fetchErr
 	})
 	if err != nil {
@@ -295,5 +300,6 @@ func init() {
 	logsCmd.Flags().BoolVarP(&logsFollow, "follow", "f", false, "Stream runtime logs (live tail via SSE), or poll timeline every 2s with --timeline")
 	logsCmd.Flags().StringVarP(&logsDeploymentID, "deployment", "d", "", "Specific deployment ID (default: latest)")
 	logsCmd.Flags().StringVarP(&logsServiceRef, "service", "s", "", "Service ref (name|slug|id) — overrides linked service")
+	logsCmd.Flags().StringVar(&logsProcess, "process", "", "Process name to scope runtime logs to (multi-process service; see 'upuai ps')")
 	rootCmd.AddCommand(logsCmd)
 }

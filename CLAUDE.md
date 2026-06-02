@@ -24,9 +24,10 @@ cli/
 │   ├── down.go                # Remove último deployment (para serviço)
 │   ├── status.go              # Status do projeto e serviços
 │   ├── add.go                 # Adiciona serviço ao projeto (wizard interativo)
-│   ├── restart.go             # Reinicia serviço linkado
-│   ├── logs.go                # Visualiza logs do serviço (flags: -n/--lines)
-│   ├── scale.go               # Escala réplicas do serviço
+│   ├── process.go             # `ps` (alias: processes, process) — lista processos do serviço (web/worker/clock/release) + resolveProcess
+│   ├── restart.go             # Reinicia serviço linkado (flag: --process)
+│   ├── logs.go                # Visualiza logs do serviço (flags: -n/--lines, --process)
+│   ├── scale.go               # Escala réplicas do serviço (N global ou web=2 worker=1 por processo)
 │   ├── run.go                 # Executa comando com env vars injetadas (`-s` opcional, `--` opcional; parse manual via DisableFlagParsing)
 │   ├── shell.go               # Subshell interativo com env vars do service (paridade `railway shell`)
 │   ├── db.go                  # `db connect` (psql interativo) / `db backup` (pg_dump) / `db restore` (pg_restore) — usa endpoint público
@@ -44,7 +45,8 @@ cli/
 │   │   ├── deployments.go     # Deploy, ListDeployments, GetDeployment, Rollback, Redeploy, RemoveDeployment
 │   │   ├── environments.go    # ListEnvironments, CreateEnvironment, DeleteEnvironment
 │   │   ├── services.go        # ListServices, CreateService
-│   │   ├── instances.go       # GetLogs, RestartInstance, ScaleInstance
+│   │   ├── instances.go       # GetLogs, RestartInstance, ScaleInstance (todos com process opcional)
+│   │   ├── processes.go       # ListProcesses (multi-process service: web/worker/clock/release)
 │   │   ├── variables.go       # ListVariables, SetVariables, DeleteVariable
 │   │   ├── domains.go         # ListDomains, AddDomain, DeleteDomain
 │   │   └── errors.go          # APIError
@@ -79,7 +81,7 @@ cli/
 | **Auth** | `login`, `logout`, `whoami` |
 | **Projeto** | `init`, `link`, `unlink`, `list` (ls), `open`, `delete`, `status` |
 | **Deploy** | `deploy` (up), `redeploy`, `rollback`, `promote`, `down` |
-| **Serviço** | `add`, `restart`, `logs`, `scale`, `run`, `shell` |
+| **Serviço** | `add`, `ps`, `restart`, `logs`, `scale`, `run`, `shell`, `ssh` |
 | **Database** | `db connect` (psql), `db backup` (pg_dump), `db restore` (pg_restore) |
 | **Ambiente** | `environment` (env) → `list`, `switch`, `new`, `delete` |
 | **Configuração** | `variables` (vars/variable) → `list`, `set`, `delete` · `domain` (domains) → `list`, `add`, `delete` |

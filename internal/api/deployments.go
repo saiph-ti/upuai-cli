@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 )
 
@@ -193,13 +194,15 @@ func (c *Client) StreamDeployLogs(ctx context.Context, deployID string, onLine f
 	return c.StreamSSE(ctx, fmt.Sprintf("/deployments/%s/deploy-logs", deployID), onLine)
 }
 
-// StreamRuntimeLogs streams runtime logs (live tail) of a service instance.
-func (c *Client) StreamRuntimeLogs(ctx context.Context, envID, serviceID string, onLine func(string)) error {
-	return c.StreamSSE(
-		ctx,
-		fmt.Sprintf("/environments/%s/services/%s/instance/logs/stream", envID, serviceID),
-		onLine,
-	)
+// StreamRuntimeLogs streams runtime logs (live tail) of a service instance. When
+// process is non-empty it scopes the stream to that named process (multi-process
+// service); empty keeps legacy single-process behavior.
+func (c *Client) StreamRuntimeLogs(ctx context.Context, envID, serviceID, process string, onLine func(string)) error {
+	path := fmt.Sprintf("/environments/%s/services/%s/instance/logs/stream", envID, serviceID)
+	if process != "" {
+		path += "?process=" + url.QueryEscape(process)
+	}
+	return c.StreamSSE(ctx, path, onLine)
 }
 
 // DeploymentTimelineEnvelope mirrors orchestratorv1.GetDeploymentTimelineResponse.
