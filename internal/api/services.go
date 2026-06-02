@@ -45,6 +45,16 @@ func (c *Client) CreateService(projectID string, req *CreateServiceRequest) (*Ap
 	return &service, nil
 }
 
+// DeleteService permanently removes a single service (and its instances,
+// deployments, volumes, bucket attachments, K8s resources and domains) without
+// touching the rest of the project. The API cancels active deployments and tears
+// down cluster resources per environment; if any environment's cleanup fails it
+// returns 409 and does NOT delete the service (no drift). Backed by
+// DELETE /projects/:projectId/services/:serviceId.
+func (c *Client) DeleteService(projectID, serviceID string) error {
+	return c.Delete(fmt.Sprintf("/projects/%s/services/%s", projectID, serviceID))
+}
+
 // CreateBucketAsServiceRequest matches POST /projects/:projectId/buckets/service.
 // Buckets live on a different schema than apps/databases: they need a region
 // (S3-compatible MinIO is a single region today, but the API requires it),

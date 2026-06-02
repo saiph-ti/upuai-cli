@@ -185,7 +185,12 @@ upuai redeploy --yes                # rerun last deploy (no code change)
 upuai restart --yes                 # restart service (clears in-memory state)
 upuai rollback --list               # list deployments for rollback
 upuai rollback --to <deploy-id> --yes
+upuai config show                   # inspect builder/commands/health/root-dir
+upuai config set --root-dir apps/api  # set monorepo build Root Directory on an existing github/gitlab service
+upuai service delete <name> --yes   # delete ONE service (deployments+volumes+buckets+domains) — NOT the whole project
 ```
+
+`service delete` is the per-service counterpart to `upuai delete` (whole project) and `upuai down` (stop the deployment, keep the service). It resolves `<name>` by name/slug/id and is irreversible.
 
 For database investigation see [Database](#database).
 

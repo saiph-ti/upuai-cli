@@ -118,6 +118,9 @@ Then ask the agent in natural language: *"deploy this to upuai"*. Full guide and
 | `run` | Run a command **locally** with service environment variables injected |
 | `shell` | Open a **local** subshell with service environment variables injected |
 | `ssh` | Open an interactive shell (or run a command) **inside the running container** — `upuai ssh -s api -- bin/rails console`. `--process <name>` targets one process of a multi-process service. Generic/stack-agnostic; backed by a K8s PTY exec |
+| `config show` | Show the current build/deploy config of the linked service (builder, build/start commands, health check, root directory). Alias: `config get` |
+| `config set` | Update build/deploy config. `--root-dir apps/api` sets the build **Root Directory** for a monorepo on an existing github/gitlab service (no recreate needed); also `--builder`, `--dockerfile-path`, `--build-command`, `--start-command`, `--health-check` |
+| `service delete <name>` | Permanently delete **a single service** (and its deployments, volumes, bucket attachments, cluster workloads, domains) without touching the rest of the project. Irreversible; `-y` skips confirmation. Contrast with `upuai delete` (whole project) and `upuai down` (stop the deployment, keep the service) |
 
 ### Database
 
