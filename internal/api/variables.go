@@ -102,3 +102,38 @@ func (c *Client) SetEnvironmentVariables(envID string, vars []VariableInput) ([]
 func (c *Client) DeleteEnvironmentVariable(envID, key string) error {
 	return c.Delete(fmt.Sprintf("/environments/%s/variables/%s", envID, key))
 }
+
+// ─── Vínculo de variáveis compartilhadas por serviço (opt-in injection) ──────
+// Escolhe QUAIS shared vars (projeto/ambiente) são injetadas num serviço — o
+// usuário liga/desliga por serviço. Paridade com a seção "Compartilhadas" da
+// aba de Variáveis na web.
+
+type SharedVariableBinding struct {
+	ID         string `json:"id"`
+	Key        string `json:"key"`
+	Value      string `json:"value"`
+	IsSecret   bool   `json:"isSecret"`
+	Scope      string `json:"scope,omitempty"`
+	Origin     string `json:"origin"` // "project" | "environment"
+	Bound      bool   `json:"bound"`
+	Overridden bool   `json:"overridden"`
+}
+
+func (c *Client) ListServiceSharedVariables(envID, serviceID string) ([]SharedVariableBinding, error) {
+	var out []SharedVariableBinding
+	if err := c.Get(fmt.Sprintf("/environments/%s/services/%s/shared-variables", envID, serviceID), &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+type setSharedVarBindingBody struct {
+	VariableID string `json:"variableId"`
+	Origin     string `json:"origin"`
+	Bound      bool   `json:"bound"`
+}
+
+func (c *Client) SetServiceSharedVariableBinding(envID, serviceID, variableID, origin string, bound bool) error {
+	body := setSharedVarBindingBody{VariableID: variableID, Origin: origin, Bound: bound}
+	return c.Put(fmt.Sprintf("/environments/%s/services/%s/shared-variables", envID, serviceID), body, nil)
+}

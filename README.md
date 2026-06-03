@@ -147,6 +147,9 @@ Then ask the agent in natural language: *"deploy this to upuai"*. Full guide and
 | `variables list` | `vars list` | List all environment variables. `--shared` lists the **environment-level** layer; `--project` the **project-level** (global) layer |
 | `variables set KEY=VALUE...` | `vars set` | Set variables. `--scope both\|runtime\|build` controls injection phase. `--shared` targets the **environment** layer (inherited by every service); `--project` the **project** layer (global to all environments). Default = this service. Precedence on deploy: service > environment > project |
 | `variables delete KEY` | `vars delete` | Delete a variable (`--shared`/`--project` for the shared layers) |
+| `variables shared list` | `vars shared list` | **Per service**: list which shared (project/environment) variables are injected (`Enabled`/`Origin`) |
+| `variables shared enable KEY...` | `vars shared enable` | Inject shared variable(s) into this service. `--origin project\|environment` disambiguates a key defined in both layers |
+| `variables shared disable KEY...` | `vars shared disable` | Stop injecting shared variable(s) into this service |
 | `domain list` | `domains list` | List custom domains |
 | `domain add <domain>` | `domains add` | Add a custom domain |
 | `domain delete <domain-id>` | `domains delete` | Delete a custom domain |
@@ -454,6 +457,12 @@ upuai vars set KEY=value                    # Set a single variable
 upuai vars set DB_URL=postgres://... PORT=8080  # Set multiple at once
 upuai vars set -s api API_KEY=xxx           # Set on a specific service
 upuai vars delete SECRET_KEY                # Delete a variable
+
+# Per-service binding of shared variables (which shared vars this service gets)
+upuai vars shared list -s api               # List shared vars + Enabled/Origin for this service
+upuai vars shared enable DATABASE_URL REDIS_URL -s worker  # inject into this service
+upuai vars shared disable DATABASE_URL -s site             # stop injecting
+upuai vars shared enable PUBLIC_ID --origin project -s api # disambiguate layer
 ```
 
 ### domain

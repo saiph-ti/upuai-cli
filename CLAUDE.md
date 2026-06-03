@@ -33,6 +33,7 @@ cli/
 │   ├── db.go                  # `db connect` (psql interativo) / `db backup` (pg_dump) / `db restore` (pg_restore) — usa endpoint público
 │   ├── environment.go         # Gerencia ambientes (alias: env) — subcommands: list, switch, new, delete
 │   ├── variables.go           # Gerencia env vars (aliases: vars, variable) — subcommands: list, set, delete; flag `-s/--service` em todos
+│   ├── variables_shared.go    # `variables shared` → list/enable/disable: vínculo opt-in de shared vars (projeto/ambiente) por serviço (paridade web "Compartilhadas")
 │   ├── domain.go              # Gerencia domínios custom (alias: domains) — subcommands: list, add, delete
 │   ├── completion.go          # Gera scripts de autocompletion (bash|zsh|fish|powershell)
 │   ├── upgrade.go             # Atualiza CLI para última versão
@@ -84,7 +85,7 @@ cli/
 | **Serviço** | `add`, `ps`, `restart`, `logs`, `scale`, `run`, `shell`, `ssh` |
 | **Database** | `db connect` (psql), `db backup` (pg_dump), `db restore` (pg_restore) |
 | **Ambiente** | `environment` (env) → `list`, `switch`, `new`, `delete` |
-| **Configuração** | `variables` (vars/variable) → `list`, `set`, `delete` · `domain` (domains) → `list`, `add`, `delete` |
+| **Configuração** | `variables` (vars/variable) → `list`, `set`, `delete`, `shared {list,enable,disable}` · `domain` (domains) → `list`, `add`, `delete` |
 | **Utilitário** | `version`, `completion`, `upgrade` |
 
 ## Adicionando Novo Comando

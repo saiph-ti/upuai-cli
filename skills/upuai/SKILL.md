@@ -229,6 +229,15 @@ upuai vars set -s api API_KEY=xxx --yes              # target a specific service
 upuai vars delete SECRET_KEY --yes
 ```
 
+Shared variables (project/environment layers) are **opt-in per service** — pick which ones a service receives:
+
+```bash
+upuai vars shared list -s api                              # shared vars + Enabled/Origin for this service
+upuai vars shared enable DATABASE_URL REDIS_URL -s worker  # inject into this service
+upuai vars shared disable DATABASE_URL -s site             # stop injecting
+upuai vars shared enable PUBLIC_ID --origin project -s api # key defined in both layers
+```
+
 Vars take effect on the **next deploy** — trigger `upuai redeploy --yes` if the user expects them live immediately. Never write secrets to the user's chat / repo / logs.
 
 ### Custom domains
