@@ -10,8 +10,11 @@ type Domain struct {
 	CreatedAt string `json:"createdAt"`
 }
 
+// AddDomainRequest mirrors createDomainSchema on the API: the canonical field
+// is `hostname` (same as the web SPA's CreateDomainRequest). `targetPort` is
+// omitted on purpose — the API inherits it from the service's generated domain.
 type AddDomainRequest struct {
-	Domain string `json:"domain"`
+	Hostname string `json:"hostname"`
 }
 
 func (c *Client) ListDomains(envID, serviceID string) ([]Domain, error) {
@@ -25,7 +28,7 @@ func (c *Client) ListDomains(envID, serviceID string) ([]Domain, error) {
 
 func (c *Client) AddDomain(envID, serviceID, domain string) (*Domain, error) {
 	var result Domain
-	err := c.Post(fmt.Sprintf("/environments/%s/services/%s/domains", envID, serviceID), &AddDomainRequest{Domain: domain}, &result)
+	err := c.Post(fmt.Sprintf("/environments/%s/services/%s/domains", envID, serviceID), &AddDomainRequest{Hostname: domain}, &result)
 	if err != nil {
 		return nil, err
 	}

@@ -101,9 +101,10 @@ func (c *Client) parseError(resp *http.Response) error {
 	}
 	if len(body) > 0 {
 		var parsed struct {
-			Message   string `json:"message"`
-			Error     string `json:"error"`
-			RequestID string `json:"requestId"`
+			Message   string          `json:"message"`
+			Error     string          `json:"error"`
+			RequestID string          `json:"requestId"`
+			Details   json.RawMessage `json:"details"`
 		}
 		if json.Unmarshal(body, &parsed) == nil {
 			if parsed.Message != "" {
@@ -112,6 +113,17 @@ func (c *Client) parseError(resp *http.Response) error {
 				apiErr.Message = parsed.Error
 			}
 			apiErr.RequestID = parsed.RequestID
+			// `details` da API é Record<string, unknown> | string[]. Decode
+			// best-effort no shape comum (validação Zod = {campo: "msg"}); shapes
+			// com valores não-string (ex: PlanLimit {current, limit}) ou array são
+			// ignorados sem perder message/requestId. RawMessage garante que o
+			// parse acima nunca falhe por causa do shape de details.
+			if len(parsed.Details) > 0 {
+				var d map[string]string
+				if json.Unmarshal(parsed.Details, &d) == nil {
+					apiErr.Details = d
+				}
+			}
 		}
 	}
 	return apiErr
