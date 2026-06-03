@@ -2,7 +2,7 @@ module github.com/upuai-cloud/cli
 
 go 1.25.0
 
-toolchain go1.26.3
+toolchain go1.26.4
 
 require (
 	github.com/charmbracelet/bubbles v0.20.0
