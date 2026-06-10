@@ -133,7 +133,7 @@ var variablesListCmd = &cobra.Command{
 		}
 
 		fmt.Println()
-		table := ui.NewTable("Key", "Value", "Secret")
+		table := ui.NewTable("Key", "Value", "Secret", "Scope")
 		for _, v := range vars {
 			value := v.DisplayValue()
 			if v.IsSecret {
@@ -143,7 +143,9 @@ var variablesListCmd = &cobra.Command{
 			if v.IsSecret {
 				secret = "Yes"
 			}
-			table.AddRow(v.Key, value, secret)
+			// GetScope: respostas legadas sem `scope` rendem BOTH (default da
+			// API) — nunca uma célula vazia que pareça "sem escopo".
+			table.AddRow(v.Key, value, secret, strings.ToLower(v.GetScope()))
 		}
 		table.Print()
 		fmt.Println()

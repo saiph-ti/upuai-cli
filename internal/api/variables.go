@@ -22,6 +22,19 @@ func (v *EnvVar) DisplayValue() string {
 	return v.Value
 }
 
+// EnvVarScopeBoth is the default injection scope (build AND runtime).
+const EnvVarScopeBoth = "BOTH"
+
+// GetScope returns the var's injection scope, defaulting to BOTH for legacy
+// API responses that omit the field. Callers must use this (never v.Scope
+// directly) so a scope-less payload can never be misread as scoped.
+func (v *EnvVar) GetScope() string {
+	if v.Scope == "" {
+		return EnvVarScopeBoth
+	}
+	return v.Scope
+}
+
 type VariableInput struct {
 	Key      string `json:"key"`
 	Value    string `json:"value"`
