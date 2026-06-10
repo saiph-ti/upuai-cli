@@ -30,7 +30,7 @@ func TestSendResizeWH(t *testing.T) {
 			t.Errorf("upgrade: %v", err)
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		for {
 			msgType, payload, err := conn.ReadMessage()
 			if err != nil {
@@ -55,7 +55,7 @@ func TestSendResizeWH(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	var mu sync.Mutex
 
@@ -101,7 +101,7 @@ func TestSendResize_InvalidFDEmitsNothing(t *testing.T) {
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		if _, payload, err := conn.ReadMessage(); err == nil {
 			received <- payload
 		}
@@ -116,7 +116,7 @@ func TestSendResize_InvalidFDEmitsNothing(t *testing.T) {
 
 	var mu sync.Mutex
 	sendResize(conn, -1, &mu)
-	conn.Close()
+	_ = conn.Close()
 
 	select {
 	case payload := <-received:
