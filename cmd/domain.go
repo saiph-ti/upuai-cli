@@ -61,11 +61,20 @@ var domainListCmd = &cobra.Command{
 		}
 
 		fmt.Println()
-		table := ui.NewTable("Domain", "Type", "Status", "ID")
+		table := ui.NewTable("Domain", "Type", "Status", "SSL", "ID")
 		for _, d := range domains {
-			table.AddRow(d.Domain, d.Type, d.Status, d.ID)
+			ssl := d.SslStatus
+			if ssl == "" {
+				ssl = "-"
+			}
+			table.AddRow(d.Domain, d.Type, d.Status, ssl, d.ID)
 		}
 		table.Print()
+		for _, d := range domains {
+			if d.SslError != "" {
+				ui.PrintWarning(fmt.Sprintf("%s: %s", d.Domain, d.SslError))
+			}
+		}
 		fmt.Println()
 
 		return nil

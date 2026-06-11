@@ -3,10 +3,14 @@ package api
 import "fmt"
 
 type Domain struct {
-	ID        string `json:"id"`
-	Domain    string `json:"hostname"` // API returns "hostname"
-	Type      string `json:"type"`
-	Status    string `json:"status"`
+	ID     string `json:"id"`
+	Domain string `json:"hostname"` // API returns "hostname"
+	Type   string `json:"type"`
+	Status string `json:"status"` // DNS: pending | configuring | active | error
+	// TLS é rastreado separado do DNS: um domain pode estar com DNS active e o
+	// certificado ainda em issuing/failed (ex: failed-backoff do cert-manager).
+	SslStatus string `json:"sslStatus,omitempty"` // pending | issuing | active | failed; vazio até a 1ª emissão
+	SslError  string `json:"sslError,omitempty"`  // última falha de emissão (failed, ou issuing em retry-backoff)
 	CreatedAt string `json:"createdAt"`
 }
 
