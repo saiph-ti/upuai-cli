@@ -186,6 +186,17 @@ to drop+recreate matching objects.`,
 	},
 }
 
+// stdinIsTerminal reports whether stdin is an interactive terminal. Used to
+// avoid interactive prompts (which open /dev/tty) in scripts/pipes. Dependency-
+// free via the char-device bit — same check used by the spinner.
+func stdinIsTerminal() bool {
+	fi, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return (fi.Mode() & os.ModeCharDevice) != 0
+}
+
 // loadOrEnablePublicAccess fetches the current state and offers to enable it
 // if disabled. Used by all three db subcommands.
 func loadOrEnablePublicAccess() (*api.PublicAccessInfo, error) {
@@ -211,6 +222,12 @@ func loadOrEnablePublicAccess() (*api.PublicAccessInfo, error) {
 	}
 
 	if !dbAutoEnable && !flagYes {
+		// Without a TTY (e.g. `db connect --print` in a script/pipe, or any
+		// non-interactive shell), ui.Confirm would try to open /dev/tty and fail
+		// with "could not open a new TTY". Surface an actionable error instead.
+		if !stdinIsTerminal() {
+			return nil, fmt.Errorf("public access is disabled — re-run with --enable (non-interactive), --yes, or enable it in the dashboard")
+		}
 		confirmed, err := ui.Confirm("Public access is disabled. Enable it now?")
 		if err != nil {
 			return nil, err
