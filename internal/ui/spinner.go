@@ -74,7 +74,13 @@ func RunWithSpinner(message string, fn func() error) error {
 	}
 
 	m := NewSpinner(message)
-	p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
+	// WithInput(nil): o spinner é puramente visual (não lê teclado útil). Sem isto,
+	// com inputType=defaultInput o Bubble Tea tenta abrir /dev/tty baseado no
+	// os.Stdin — quando stderr é TTY mas stdin NÃO é (ex: `upuai db connect --print
+	// < /dev/null`), isso falha com "could not open a new TTY". WithInput(nil) usa
+	// inputType=customInput e nunca chama openInputTTY(). Cancelamento ainda
+	// funciona via SIGINT do shell.
+	p := tea.NewProgram(m, tea.WithOutput(os.Stderr), tea.WithInput(nil))
 
 	errCh := make(chan error, 1)
 	go func() {
