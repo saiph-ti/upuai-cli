@@ -280,13 +280,18 @@ upuai up --wait --wait-timeout 600    # Wait up to 10 minutes (default 300 s)
 ```
 
 `upuai up` packages the local working directory into a tarball, uploads it to platform
-storage, and triggers a deploy from that source — **no connected git repo required**
-(same UX as `vercel`, `railway up`, `fly deploy`). It honors `.gitignore` / `.upuaiignore`
-and excludes `.git`, `node_modules`, and `.env*`. A local `upuai.toml` is read just like
-the git path, so release-phase / migrations apply. Available since **v0.11.0**.
+storage, and triggers a deploy from that source — **no connected git repo required**. It
+honors `.gitignore` / `.upuaiignore` and excludes `.git`, `node_modules`, and `.env*`. A
+local `upuai.toml` is read just like the git path, so release-phase / migrations apply.
+Available since **v0.11.0**.
 
-`deploy` = deploy from a **connected git** repo · `up` = deploy from **local source**.
-These are separate commands; `up` is no longer an alias of `deploy`.
+**The recommended path is git**: connect a repository (GitHub/GitLab) and use `upuai deploy`
+(or `git push` for auto-deploy). Git is the source of truth — reproducible, commit-pinned
+deploys with history. Use `upuai up` as an **escape hatch**: a quick deploy of local code,
+uncommitted changes, scratch dirs, or when there genuinely is no git repo.
+
+`deploy` = deploy from a **connected git** repo (canonical) · `up` = deploy from **local
+source** (escape hatch). These are separate commands; `up` is no longer an alias of `deploy`.
 
 ### redeploy
 

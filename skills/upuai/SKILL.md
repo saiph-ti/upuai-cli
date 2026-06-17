@@ -99,9 +99,9 @@ upuai deploy --wait --yes -o json
 
 ### Deploy from local source — `upuai up` (no git repo)
 
-**`upuai deploy` deploys from a CONNECTED git repo** (github/gitlab — pulled fresh on every deploy). **`upuai up` deploys from your LOCAL working directory** — it packages the current directory into a tarball, uploads it to platform storage, and triggers a deploy from that source. No connected git repo required. Same UX as `vercel` / `railway up` / `fly deploy`. **Introduced in CLI v0.11.0** (`upuai up` is no longer an alias of `deploy`).
+**`upuai deploy` deploys from a CONNECTED git repo** (github/gitlab — pulled fresh on every deploy). **`upuai up` deploys from your LOCAL working directory** — it packages the current directory into a tarball, uploads it to platform storage, and triggers a deploy from that source. No connected git repo required. **Introduced in CLI v0.11.0** (`upuai up` is no longer an alias of `deploy`).
 
-Use `upuai up` when: there is no git repo connected, or the user wants a quick deploy of local code (uncommitted changes, scratch dirs). Use `upuai deploy` when a github/gitlab service is linked and the source of truth is the remote repo.
+**Git is the canonical, recommended path** (source of truth, reproducible/commit-pinned deploys, auto-deploy on push). Prefer `upuai deploy` (or connecting a repo so `git push` auto-deploys) whenever a github/gitlab service is linked. Use `upuai up` only as an **escape hatch**: no git repo connected, or a quick deploy of local code (uncommitted changes, scratch dirs).
 
 ```bash
 upuai up --wait --yes -o json

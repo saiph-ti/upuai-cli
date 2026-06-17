@@ -18,15 +18,19 @@ var (
 
 var upCmd = &cobra.Command{
 	Use:   "up",
-	Short: "Deploy the current directory (uploads local source, no git connection needed)",
-	Long: `Deploy the current working directory to Upuai Cloud.
+	Short: "Deploy local source without git (escape hatch — prefira git + 'upuai deploy')",
+	Long: `Deploy the current working directory to Upuai Cloud a partir da fonte LOCAL.
 
 Empacota o diretório local num tarball (honrando .gitignore/.upuaiignore,
 excluindo .git/node_modules/.env*), faz upload pro storage da plataforma e
 dispara um deploy a partir dessa fonte — sem precisar de repositório git
-conectado. Mesmo padrão de 'vercel' / 'railway up' / 'fly deploy'.
+conectado.
 
-Para deploy a partir de um repositório git conectado, use 'upuai deploy'.`,
+O caminho recomendado é git: conecte um repositório (GitHub/GitLab) e use
+'upuai deploy' (ou git push pra auto-deploy). Git é a fonte da verdade — deploy
+reproduzível, vinculado ao commit, com histórico. Use 'upuai up' como escape
+hatch: deploy rápido de código local, mudanças não-commitadas, scratch dirs, ou
+quando genuinamente não há git.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := requireAuth(); err != nil {
 			return err
