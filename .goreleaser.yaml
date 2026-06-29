@@ -111,6 +111,13 @@ release:
 
 # Homebrew tap: saiph-ti/homebrew-upuai-cli (macOS + Linux).
 # Requires HOMEBREW_TAP_TOKEN secret (PAT with Contents:RW on that repo + scoop-upuai-cli).
+#
+# DEPRECATION (rastreada, NÃO migrada de propósito): `goreleaser check` avisa que `brews`
+# está sendo descontinuado em favor de `homebrew_casks`. NÃO migramos porque Homebrew casks
+# são **macOS-only** e este tap serve macOS **E Linux** (Linuxbrew instala formula, não cask)
+# — migrar quebraria `brew install upuai` no Linux. Mantemos `brews` (ainda válido, só warning)
+# até o goreleaser anunciar data de remoção; aí avaliamos cask (macOS) + install script (Linux,
+# já documentado acima). Migração cega = regressão de Linux; deprecação consciente != ponta solta.
 brews:
   - name: upuai
     repository:
