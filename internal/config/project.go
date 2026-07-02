@@ -60,6 +60,20 @@ func ProjectConfigExists() bool {
 	return findProjectConfig(".") != ""
 }
 
+// ProjectRoot returns the directory that owns the linked project — the one
+// containing `.upuai/config.json`, found by walking up from the CWD. ok is false
+// when the CWD is not inside a linked project. Callers that write project-level
+// files (e.g. the Claude Code skill) must anchor to this, not the CWD, so running
+// a command from a subdirectory doesn't scatter files in the wrong place.
+func ProjectRoot() (string, bool) {
+	cfgPath := findProjectConfig(".")
+	if cfgPath == "" {
+		return "", false
+	}
+	// cfgPath = <root>/.upuai/config.json → root = dir(dir(cfgPath))
+	return filepath.Dir(filepath.Dir(cfgPath)), true
+}
+
 func findProjectConfig(dir string) string {
 	abs, err := filepath.Abs(dir)
 	if err != nil {

@@ -65,7 +65,27 @@ upuai rollback --list         # rollback to a previous deploy
 
 ### Use with AI agents
 
-Install the upuai skill into Claude Code, Cursor, Codex CLI, Windsurf, or any other agent supported by [vercel-labs/skills](https://github.com/vercel-labs/skills) (55+ agents):
+**Claude Code — the CLI installs the skill for you.** The first time you run any
+`upuai` command in a linked project (including `upuai init` / `upuai link`), the
+CLI writes `.claude/skills/upuai/SKILL.md`, so a fresh Claude Code session already
+knows what Upuai is and how to deploy this project — no manual step, even in
+projects created before this feature existed. Commit that file to share it with
+your team. Manage it explicitly:
+
+```bash
+upuai skill install             # install/refresh in this project
+upuai skill install --global    # install for every project on this machine (~/.claude)
+upuai skill install --claude-md # also add a managed Upuai pointer block to CLAUDE.md
+upuai skill status              # show installed vs. bundled version and state
+```
+
+The install is idempotent and self-healing: a file you hand-edited (or installed
+via `npx skills add`) is never clobbered unless you pass `--force`. Opt out of the
+auto-install with `UPUAI_SKIP_SKILL_INSTALL=1` or `installSkill: false` in
+`~/.upuai/config.json`.
+
+**Other agents** (Cursor, Codex CLI, Windsurf, and 55+ more) — install via
+[vercel-labs/skills](https://github.com/vercel-labs/skills):
 
 ```bash
 npx skills add saiph-ti/upuai-cli --skill upuai
@@ -117,7 +137,7 @@ Then ask the agent in natural language: *"deploy this to upuai"*. Full guide and
 | `scale` | Scale the service to N replicas (`upuai scale 3`), or individual processes (`upuai scale web=2 worker=1`) |
 | `run` | Run a command **locally** with service environment variables injected |
 | `shell` | Open a **local** subshell with service environment variables injected |
-| `ssh` | Open an interactive shell (or run a command) **inside the running container** — `upuai ssh -s api -- bin/rails console`. `--process <name>` targets one process of a multi-process service. Generic/stack-agnostic; backed by a K8s PTY exec |
+| `ssh` | Open an interactive shell (or run a command) **inside the running container** — `upuai ssh -s api -- bin/rails console`. Auto-allocates a PTY when stdin/stdout are terminals; in a pipe/redirect it runs non-interactively with byte-exact stdout/stderr (`echo x \| upuai ssh -- cat`). Force with `-t/--tty`, disable with `-T/--no-tty`. `--process <name>` targets one process of a multi-process service. Generic/stack-agnostic; backed by a K8s exec |
 | `config show` | Show the current build/deploy config of the linked service (builder, build/start commands, health check, root directory). Alias: `config get` |
 | `config set` | Update build/deploy config. `--root-dir apps/api` sets the build **Root Directory** for a monorepo on an existing github/gitlab service (no recreate needed); also `--builder`, `--dockerfile-path`, `--build-command`, `--start-command`, `--health-check` |
 | `service delete <name>` | Permanently delete **a single service** (and its deployments, volumes, bucket attachments, cluster workloads, domains) without touching the rest of the project. Irreversible; `-y` skips confirmation. Contrast with `upuai delete` (whole project) and `upuai down` (stop the deployment, keep the service) |
@@ -234,6 +254,7 @@ All settings can be overridden with `UPUAI_` prefix:
 | `UPUAI_API_URL` | API base URL (overrides config) |
 | `UPUAI_WEB_URL` | Web dashboard URL (overrides config) |
 | `UPUAI_DISABLE_UPDATE_CHECK` | Set to `1` to suppress the periodic "new version available" nudge (useful in CI/agent contexts) |
+| `UPUAI_SKIP_SKILL_INSTALL` | Set to `1` to disable auto-installing the Upuai agent skill into linked projects (see [Use with AI agents](#use-with-ai-agents)) |
 
 ## Command Details
 

@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/upuai-cloud/cli/internal/api"
 	"github.com/upuai-cloud/cli/internal/config"
+	"github.com/upuai-cloud/cli/internal/skillinstall"
 	"github.com/upuai-cloud/cli/internal/ui"
 	"github.com/upuai-cloud/cli/internal/updatecheck"
 )
@@ -54,6 +55,11 @@ func Execute() error {
 	// Update notification runs *after* the user's command — never block their
 	// workflow. Errors inside MaybeNotify are silently swallowed.
 	updatecheck.MaybeNotify(cmdName)
+
+	// Ensure the Upuai agent skill exists in the linked project (backfills
+	// projects that predate this feature). Idempotent, self-healing, and silent
+	// unless it actually writes the file. Never blocks or errors the workflow.
+	skillinstall.MaybeEnsure(cmdName)
 
 	return err
 }

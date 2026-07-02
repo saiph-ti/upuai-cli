@@ -26,6 +26,7 @@ func InitGlobalConfig() {
 	viper.SetDefault("webUrl", DefaultWebURL)
 	viper.SetDefault("defaultEnvironment", DefaultEnvironment)
 	viper.SetDefault("output", "table")
+	viper.SetDefault("installSkill", true)
 
 	viper.SetEnvPrefix("UPUAI")
 	viper.AutomaticEnv()
@@ -53,4 +54,12 @@ func GetWebURL() string {
 
 func GetDefaultOutput() string {
 	return viper.GetString("output")
+}
+
+// SkillAutoInstallEnabled reports whether the CLI may auto-install/refresh the
+// Upuai agent skill into a linked project. Default true; disable persistently
+// with `installSkill: false` in ~/.upuai/config.json or per-invocation with
+// UPUAI_SKIP_SKILL_INSTALL=1.
+func SkillAutoInstallEnabled() bool {
+	return viper.GetBool("installSkill")
 }
