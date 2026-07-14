@@ -137,6 +137,12 @@ func (c *Client) getToken() string {
 }
 
 func (c *Client) tryRefreshToken() bool {
+	// A scoped machine/CI token (UPUAI_TOKEN) is opaque and long-lived — there is
+	// no refresh token to rotate. A 401 means it was revoked or expired; surface
+	// it instead of silently falling back to the interactive user's credentials.
+	if config.MachineTokenFromEnv() != "" {
+		return false
+	}
 	if c.credStore == nil {
 		return false
 	}

@@ -102,6 +102,7 @@ Then ask the agent in natural language: *"deploy this to upuai"*. Full guide and
 | `login` | Authenticate with Upuai Cloud (GitHub OAuth or Email OTP) |
 | `logout` | Log out and clear stored credentials |
 | `whoami` | Show current authenticated user and project context |
+| `token` | Manage scoped, revocable API tokens for CI/automation — `create`/`list`/`revoke`. The secret is shown once; use it non-interactively via `UPUAI_TOKEN` |
 
 ### Project
 
@@ -218,7 +219,23 @@ upuai login
 upuai login --email
 ```
 
-Credentials are stored in `~/.upuai/credentials.json` (file permissions `0600`). Tokens are automatically refreshed on 401 responses. Interactive `upuai login` is the only supported auth flow — same pattern as `railway login`, `vercel login`, `fly auth login`.
+Credentials are stored in `~/.upuai/credentials.json` (file permissions `0600`). The login JWT is automatically refreshed on 401 responses. Interactive `upuai login` is the canonical flow **for humans** — same pattern as `railway login`, `vercel login`, `fly auth login`.
+
+For **CI/automation**, mint a scoped, revocable token with `upuai token create` and set it in the `UPUAI_TOKEN` environment variable. It is an opaque, server-validated, long-lived credential (no 2h JWT TTL, no refresh) — the CLI uses it verbatim as the bearer, and a 401 means the token was revoked or expired (it never falls back to the interactive user).
+
+```bash
+# The secret is printed ONCE — store it immediately.
+upuai token create --name playground-ci --scope deploy            # read + write
+upuai token create --name readonly --scope read --expires 90      # GET-only, expires in 90 days
+upuai token create --name proj-ci --scope deploy --project <id>   # narrowed to a single project
+upuai token list
+upuai token revoke <token-id>
+
+export UPUAI_TOKEN=upua_...   # then any command runs non-interactively
+upuai up
+```
+
+Scopes: `read` (safe/GET requests only) or `deploy` (read + write). A token never carries owner-only authority (billing, member management). Only a tenant Owner/Admin can create or revoke tokens.
 
 ## Configuration
 

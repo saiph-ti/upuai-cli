@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const (
@@ -102,15 +103,30 @@ func (s *CredentialStore) Exists() bool {
 	return err == nil
 }
 
-// GetToken returns the JWT to use as Bearer auth. Source of truth is the
-// credential store (`~/.upuai/credentials.json`), populated by `upuai login`
-// and auto-rotated on 401 by the API client's refresh path. There is no env
-// var fallback — the previous `UPUAI_TOKEN` env shortcut was removed on
-// 2026-05-21 because the JWT TTL (2h) plus the refresh requiring the
-// refresh token from credentials.json made headless usage break silently
-// in any CI job longer than the access token lifetime. See runbook
-// upuai-core/docs/runbooks/2026-05-21-ai-deploy-skill.md (round 2).
+// EnvTokenVar carries a scoped machine/CI token (minted by `upuai token create`)
+// for non-interactive use. It takes precedence over the stored login credential.
+const EnvTokenVar = "UPUAI_TOKEN"
+
+// MachineTokenFromEnv returns the scoped machine token from UPUAI_TOKEN, or "".
+func MachineTokenFromEnv() string {
+	return strings.TrimSpace(os.Getenv(EnvTokenVar))
+}
+
+// GetToken returns the bearer credential to use. Precedence: a scoped machine
+// token in UPUAI_TOKEN (non-interactive / CI) wins; otherwise the interactive
+// login credential from `~/.upuai/credentials.json`, auto-rotated on 401 by the
+// API client's refresh path.
+//
+// UPUAI_TOKEN previously (pre-2026-05-21) stuffed a short-lived user JWT here and
+// was removed because the 2h TTL + refresh-token dependency broke headless CI. It
+// now carries an OPAQUE, server-validated, long-lived scoped token that needs no
+// refresh — the fix for exactly that breakage. The client's refresh path skips
+// rotation whenever this env var is set. See runbook
+// upuai-core/docs/runbooks/2026-07-14-scoped-api-tokens.md.
 func (s *CredentialStore) GetToken() string {
+	if envToken := MachineTokenFromEnv(); envToken != "" {
+		return envToken
+	}
 	creds, err := s.Load()
 	if err != nil || creds == nil {
 		return ""
