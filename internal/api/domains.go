@@ -52,3 +52,33 @@ func (c *Client) GenerateDomain(envID, serviceID string, targetPort int) (*Domai
 func (c *Client) DeleteDomain(envID, serviceID, domainID string) error {
 	return c.Delete(fmt.Sprintf("/environments/%s/services/%s/domains/%s", envID, serviceID, domainID))
 }
+
+// DNSRecord espelha DnsRecord/DnsTxtRecord de apps/shared/src/types/domain-types.ts.
+// Note carrega uma dica opcional (ex: "acmeDelegation" para o CNAME de delegação
+// do wildcard, "wildcardRoot" para o registro curinga).
+type DNSRecord struct {
+	Type  string `json:"type"`
+	Name  string `json:"name"`
+	Value string `json:"value"`
+	TTL   int    `json:"ttl"`
+	Note  string `json:"note,omitempty"`
+}
+
+// DNSInstructions espelha DnsInstructions da API. TxtRecord é ausente para
+// domínios WILDCARD (posse provada pela delegação ACME, sem TXT).
+type DNSInstructions struct {
+	Hostname    string      `json:"hostname"`
+	IsApex      bool        `json:"isApex"`
+	DNSRecords  []DNSRecord `json:"dnsRecords"`
+	TxtRecord   *DNSRecord  `json:"txtRecord,omitempty"`
+	DNSProvider string      `json:"dnsProvider"`
+}
+
+func (c *Client) GetDNSInstructions(envID, serviceID, domainID string) (*DNSInstructions, error) {
+	var result DNSInstructions
+	err := c.Get(fmt.Sprintf("/environments/%s/services/%s/domains/%s/dns-instructions", envID, serviceID, domainID), &result)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}

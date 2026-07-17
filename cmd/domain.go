@@ -125,12 +125,54 @@ var domainAddCmd = &cobra.Command{
 			"Type", domain.Type,
 			"Status", domain.Status,
 		)
-		fmt.Println()
-		ui.PrintInfo("Configure your DNS to point to Upuai Cloud")
-		fmt.Println()
+
+		// Instruções de DNS: imprime os registros exatos que o usuário precisa
+		// publicar (incl. o CNAME `_acme-challenge` de delegação em domínios
+		// wildcard). Sem isso o usuário de CLI ficava cego — só a UI mostrava.
+		instr, insErr := client.GetDNSInstructions(envID, serviceID, domain.ID)
+		if insErr == nil && instr != nil && (len(instr.DNSRecords) > 0 || instr.TxtRecord != nil) {
+			fmt.Println()
+			ui.PrintInfo(fmt.Sprintf("Publique estes registros DNS para %s:", domain.Domain))
+			records := instr.DNSRecords
+			if instr.TxtRecord != nil {
+				records = append(records, *instr.TxtRecord)
+			}
+			for _, r := range records {
+				fmt.Println()
+				ui.PrintKeyValue(
+					"Tipo", r.Type,
+					"Nome", r.Name,
+					"Valor", r.Value,
+					"TTL", fmt.Sprintf("%ds", r.TTL),
+				)
+				if hint := dnsNoteHint(r.Note); hint != "" {
+					ui.PrintInfo(hint)
+				}
+			}
+			fmt.Println()
+		} else {
+			fmt.Println()
+			ui.PrintInfo("Configure your DNS to point to Upuai Cloud")
+			fmt.Println()
+		}
 
 		return nil
 	},
+}
+
+// dnsNoteHint traduz o campo `note` de um registro DNS numa dica curta pro
+// usuário. Notes vêm de apps/shared/src/types/domain-types.ts (DnsRecordNote).
+func dnsNoteHint(note string) string {
+	switch note {
+	case "acmeDelegation":
+		return "Delegação do certificado (uma vez): permite emitir o TLS curinga sem nos dar acesso ao seu DNS. Mantenha DNS-only (nuvem cinza)."
+	case "wildcardRoot":
+		return "Registro curinga: encaminha qualquer subdomínio (slug.seu-dominio) para o serviço."
+	case "apexStableIp":
+		return "IP estável da Upuai (mudanças anunciadas com 30 dias de antecedência)."
+	default:
+		return ""
+	}
 }
 
 var flagDomainPort int
