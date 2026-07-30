@@ -10,11 +10,6 @@ type LoginResponse struct {
 	AvatarUrl    *string `json:"avatarUrl,omitempty"`
 }
 
-type OAuthRequest struct {
-	Code        string `json:"code"`
-	RedirectURI string `json:"redirectUri"`
-}
-
 type MeResponse struct {
 	ID        string  `json:"id"`
 	Name      string  `json:"name"`
@@ -32,15 +27,6 @@ func (c *Client) SendEmailToken(email string) error {
 func (c *Client) LoginWithEmailToken(email, token string) (*LoginResponse, error) {
 	var resp LoginResponse
 	err := c.Post("/auth/login-email-token/"+email+"/"+token, nil, &resp)
-	if err != nil {
-		return nil, err
-	}
-	return &resp, nil
-}
-
-func (c *Client) LoginOAuthGitHub(code, redirectURI string) (*LoginResponse, error) {
-	var resp LoginResponse
-	err := c.Post("/auth/oauth/github", &OAuthRequest{Code: code, RedirectURI: redirectURI}, &resp)
 	if err != nil {
 		return nil, err
 	}

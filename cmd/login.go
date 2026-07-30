@@ -9,30 +9,23 @@ import (
 	"github.com/pkg/browser"
 	"github.com/spf13/cobra"
 	"github.com/upuai-cloud/cli/internal/api"
-	"github.com/upuai-cloud/cli/internal/auth"
 	"github.com/upuai-cloud/cli/internal/config"
 	"github.com/upuai-cloud/cli/internal/ui"
 )
 
-var (
-	loginEmailFlag  bool
-	loginGithubFlag bool
-)
+var loginEmailFlag bool
 
 var loginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Authenticate with Upuai Cloud",
 	Long: `Authenticate with Upuai Cloud.
 
-By default, opens the browser for one-click authorization.
-Use --email for email-based OTP login.
-Use --github for GitHub OAuth authentication.`,
+By default, opens the browser for one-click authorization — which is also how you
+sign in with GitHub, through the Upuai Cloud GitHub App.
+Use --email for email-based OTP login.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if loginEmailFlag {
 			return loginWithEmail()
-		}
-		if loginGithubFlag {
-			return loginWithOAuth()
 		}
 		return loginWithBrowser()
 	},
@@ -40,7 +33,6 @@ Use --github for GitHub OAuth authentication.`,
 
 func init() {
 	loginCmd.Flags().BoolVar(&loginEmailFlag, "email", false, "Login via email OTP code")
-	loginCmd.Flags().BoolVar(&loginGithubFlag, "github", false, "Login via GitHub OAuth")
 	rootCmd.AddCommand(loginCmd)
 }
 
@@ -55,7 +47,6 @@ func loginWithBrowser() error {
 		fmt.Println()
 		ui.PrintInfo("You can also log in with:")
 		fmt.Println("  upuai login --email    Login via email OTP code")
-		fmt.Println("  upuai login --github   Login via GitHub OAuth")
 		return nil
 	}
 
@@ -130,34 +121,6 @@ func loginWithBrowser() error {
 		TenantPlan:   loginResp.TenantPlan,
 		AvatarUrl:    loginResp.AvatarUrl,
 	})
-}
-
-func loginWithOAuth() error {
-	ui.PrintBanner()
-	fmt.Println("  Opening browser for GitHub authentication...")
-	fmt.Println()
-
-	apiURL := config.GetAPIURL()
-	authURL := apiURL + "/auth/oauth/github"
-
-	result, err := auth.StartOAuthFlow(authURL)
-	if err != nil {
-		return fmt.Errorf("authentication failed: %w", err)
-	}
-
-	client := api.NewClient()
-	var loginResp *api.LoginResponse
-
-	err = ui.RunWithSpinner("Authenticating...", func() error {
-		var loginErr error
-		loginResp, loginErr = client.LoginOAuthGitHub(result.Code, result.RedirectURI)
-		return loginErr
-	})
-	if err != nil {
-		return fmt.Errorf("authentication failed: %w", err)
-	}
-
-	return saveLoginResponse(loginResp)
 }
 
 func loginWithEmail() error {

@@ -99,7 +99,7 @@ Then ask the agent in natural language: *"deploy this to upuai"*. Full guide and
 
 | Command | Description |
 |---------|-------------|
-| `login` | Authenticate with Upuai Cloud (GitHub OAuth or Email OTP) |
+| `login` | Authenticate with Upuai Cloud (browser one-click or Email OTP) |
 | `logout` | Log out and clear stored credentials |
 | `whoami` | Show current authenticated user and project context |
 | `token` | Manage scoped, revocable API tokens for CI/automation — `create`/`list`/`revoke`. The secret is shown once; use it non-interactively via `UPUAI_TOKEN` |
@@ -212,7 +212,7 @@ Then ask the agent in natural language: *"deploy this to upuai"*. Full guide and
 Two authentication methods are supported:
 
 ```bash
-# GitHub OAuth (default) — opens browser
+# Browser one-click (default) — sign in with GitHub or any method the dashboard offers
 upuai login
 
 # Email OTP — sends a 6-digit code
