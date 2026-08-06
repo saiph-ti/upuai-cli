@@ -189,7 +189,7 @@ func init() {
 	configSetCmd.Flags().StringVar(&flagConfigBuildCommand, "build-command", "", "Command to build the service")
 	configSetCmd.Flags().StringVar(&flagConfigStartCommand, "start-command", "", "Command to start the service")
 	configSetCmd.Flags().StringVar(&flagConfigHealthCheck, "health-check", "", "HTTP path for health check (e.g. /health)")
-	configSetCmd.Flags().IntVar(&flagConfigHealthCheckTimeout, "health-check-timeout", 0, "Initial delay in seconds before health checks start (default 5)")
+	configSetCmd.Flags().IntVar(&flagConfigHealthCheckTimeout, "health-check-timeout", 0, "Seconds the app may take to answer the health check before the deploy fails (default 300)")
 	configCmd.AddCommand(configSetCmd)
 	configCmd.AddCommand(configShowCmd)
 	rootCmd.AddCommand(configCmd)
