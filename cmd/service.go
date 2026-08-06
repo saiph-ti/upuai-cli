@@ -105,9 +105,10 @@ Examples:
 		// If the deleted service was the one linked in .upuai/config.json, unlink
 		// it so later commands don't target a ghost service.
 		if cfg, _ := config.LoadProjectConfig(); cfg != nil && cfg.ServiceID == target.ID {
-			cfg.ServiceID = ""
-			cfg.ServiceName = ""
-			_ = config.SaveProjectConfig(cfg)
+			_ = config.UpdateProjectConfig(func(c *config.ProjectConfig) {
+				c.ServiceID = ""
+				c.ServiceName = ""
+			})
 		}
 
 		format := getOutputFormat()

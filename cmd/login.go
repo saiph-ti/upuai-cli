@@ -118,6 +118,8 @@ func loginWithBrowser() error {
 		Login:        loginResp.Login,
 		Token:        loginResp.Token,
 		RefreshToken: loginResp.RefreshToken,
+		TenantID:     loginResp.TenantID,
+		TenantName:   loginResp.TenantName,
 		TenantPlan:   loginResp.TenantPlan,
 		AvatarUrl:    loginResp.AvatarUrl,
 	})
@@ -185,5 +187,14 @@ func saveLoginResponse(resp *api.LoginResponse) error {
 
 	fmt.Println()
 	ui.PrintSuccess("Logged in as " + ui.Accent.Render(resp.UserName) + " (" + resp.Login + ")")
+
+	// A sessão é escopada a UM workspace, escolhido pela API (o último usado, ou
+	// a membership mais antiga). Quem participa de mais de um precisa saber em
+	// qual caiu e como sair de lá — senão descobre pelo 404 de um projeto que
+	// existe, só que no outro workspace.
+	if resp.TenantName != "" {
+		ui.PrintInfo("Workspace: " + ui.Accent.Render(resp.TenantName) +
+			ui.Dim.Render("  (change it with 'upuai workspace switch')"))
+	}
 	return nil
 }

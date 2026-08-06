@@ -35,13 +35,31 @@ var listCmd = &cobra.Command{
 			return nil
 		}
 
+		// A listagem é sempre do workspace ATIVO — nomeá-lo evita a leitura errada
+		// de "esses são todos os meus projetos" para quem participa de mais de um
+		// workspace. Vale principalmente na lista vazia, onde o palpite natural é
+		// "sumiram" em vez de "estou no workspace errado".
+		workspaceName := ""
+		if claims, _ := activeWorkspace(); claims != nil {
+			workspaceName = claims.TenantName
+		}
+
 		if len(projects) == 0 {
+			if workspaceName != "" {
+				ui.PrintInfo("No projects in workspace " + ui.Accent.Render(workspaceName))
+				ui.PrintInfo("Run 'upuai init' to create one, or 'upuai workspace switch' to change workspace")
+				return nil
+			}
 			ui.PrintInfo("No projects found")
 			ui.PrintInfo("Run 'upuai init' to create one")
 			return nil
 		}
 
 		fmt.Println()
+		if workspaceName != "" {
+			ui.PrintKeyValue("Workspace", workspaceName)
+			fmt.Println()
+		}
 		table := ui.NewTable("Name", "ID", "Status", "Created")
 		for _, p := range projects {
 			status := p.Status

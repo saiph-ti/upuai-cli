@@ -10,31 +10,45 @@ cli/
 │   ├── root.go                # Root, flags globais, helpers (requireAuth, requireProject, requireServiceConfig, resolveServiceContext, resolveEnvironmentID, getEnvironment, getProjectID)
 │   ├── login.go               # OAuth GitHub + Email OTP
 │   ├── logout.go              # Limpa credentials
-│   ├── whoami.go              # Mostra usuário, org, projeto
+│   ├── whoami.go              # Mostra usuário, workspace, projeto
+│   ├── workspace.go           # `workspace` (aliases: ws, workspaces) → list, current, switch + helpers activeWorkspace/switchWorkspace/matchWorkspaceRef
+│   ├── workspace_pin.go       # Preflight: alinha a sessão ao workspace do diretório linkado (decideWorkspacePin + ensureLinkedWorkspace)
 │   ├── init.go                # Cria projeto (detecta framework)
 │   ├── link.go                # Linka diretório a projeto existente
 │   ├── unlink.go              # Deslinka diretório do projeto
 │   ├── list.go                # Lista todos os projetos (alias: ls)
 │   ├── open.go                # Abre projeto no browser
 │   ├── delete.go              # Deleta projeto linkado
-│   ├── deploy.go              # Deploy + watch mode (alias: up)
+│   ├── deploy.go              # Deploy do serviço linkado + watch mode (--watch/-w)
+│   ├── up.go                  # Deploy a partir do source local (tar + upload) — NÃO é alias de deploy
 │   ├── redeploy.go            # Redeploy do último deployment
 │   ├── rollback.go            # Rollback de deployment
 │   ├── promote.go             # Promove entre ambientes
 │   ├── down.go                # Remove último deployment (para serviço)
 │   ├── status.go              # Status do projeto e serviços
 │   ├── add.go                 # Adiciona serviço ao projeto (wizard interativo)
+│   ├── service.go             # `service delete <name>` — remove UM serviço (mantém o projeto)
 │   ├── process.go             # `ps` (alias: processes, process) — lista processos do serviço (web/worker/clock/release) + resolveProcess
 │   ├── restart.go             # Reinicia serviço linkado (flag: --process)
 │   ├── logs.go                # Visualiza logs do serviço (flags: -n/--lines, --process)
 │   ├── scale.go               # Escala réplicas do serviço (N global ou web=2 worker=1 por processo)
 │   ├── run.go                 # Executa comando com env vars injetadas (`-s` opcional, `--` opcional; parse manual via DisableFlagParsing)
 │   ├── shell.go               # Subshell interativo com env vars do service (paridade `railway shell`)
+│   ├── ssh.go                 # Sessão DENTRO do container em execução (`-s`, `--`, PTY auto; parse manual via DisableFlagParsing)
 │   ├── db.go                  # `db connect` (psql interativo) / `db backup` (pg_dump) / `db restore` (pg_restore) — usa endpoint público
+│   ├── configset.go           # `config show|get` e `config set` — build/deploy config do serviço (builder, comandos, health, root-dir)
+│   ├── scheduler.go           # `scheduler` (cron/schedulers) → list, create, run, pause, resume, delete
 │   ├── environment.go         # Gerencia ambientes (alias: env) — subcommands: list, switch, new, delete
 │   ├── variables.go           # Gerencia env vars (aliases: vars, variable) — subcommands: list, set, delete; flag `-s/--service` em todos
 │   ├── variables_shared.go    # `variables shared` → list/enable/disable: vínculo opt-in de shared vars (projeto/ambiente) por serviço (paridade web "Compartilhadas")
-│   ├── domain.go              # Gerencia domínios custom (alias: domains) — subcommands: list, add, delete
+│   ├── domain.go              # Gerencia domínios custom (alias: domains) — subcommands: list, add, generate, delete
+│   ├── bucket.go              # `bucket` (buckets) → `public {show,enable,disable}` — acesso anônimo de leitura
+│   ├── stack.go               # `stack` (stacks) → list, get, delete — instâncias de stack deployadas
+│   ├── template.go            # `template` (templates) → list, deploy <engine> — templates de database/serviço
+│   ├── catalog.go             # `catalog` (templates) → list, describe, deploy <slug> — catálogo de stacks (WordPress, etc.)
+│   ├── token.go               # `token` (tokens) → create, list, revoke — machine tokens escopados p/ CI (UPUAI_TOKEN)
+│   ├── admin.go               # `admin storage pvcs` — dashboard de storage do cluster (exige role ADMIN)
+│   ├── skill.go               # `skill` → install, status — instala/atualiza a skill de agente no projeto
 │   ├── completion.go          # Gera scripts de autocompletion (bash|zsh|fish|powershell)
 │   ├── upgrade.go             # Atualiza CLI para última versão
 │   └── version.go             # Versão, commit, build date
@@ -50,21 +64,21 @@ cli/
 │   │   ├── processes.go       # ListProcesses (multi-process service: web/worker/clock/release)
 │   │   ├── variables.go       # ListVariables, SetVariables, DeleteVariable
 │   │   ├── domains.go         # ListDomains, AddDomain, DeleteDomain
-│   │   └── errors.go          # APIError
+│   │   ├── tenant.go          # ListWorkspaces, SwitchWorkspace, ResolveProjectWorkspace (a API modela como "tenant"; o resto do CLI só fala workspace)
+│   │   └── errors.go          # APIError (+ Code do catálogo) e helpers ErrorCode/StatusCode
 │   ├── auth/
-│   │   ├── oauth.go           # Fluxo OAuth (servidor local, callback, CSRF state)
-│   │   └── token.go           # Decode JWT, verificação de expiração
+│   │   └── token.go           # DecodeToken — lê claims do JWT (id, roles, tenantId/tenantName). NÃO valida assinatura: só para exibir/decidir localmente
 │   ├── config/
 │   │   ├── global.go          # Config global (~/.upuai/config.json), Viper, env vars (UPUAI_)
 │   │   ├── credentials.go     # CredentialStore (~/.upuai/credentials.json) — fonte única de auth (login interativo)
-│   │   └── project.go         # ProjectConfig (.upuai/config.json), auto-gitignore
+│   │   └── project.go         # ProjectConfig (.upuai/config.json), auto-gitignore, SaveProjectConfig (cria no CWD) vs UpdateProjectConfig (muta o config existente, subindo a árvore)
 │   ├── detect/
 │   │   ├── frameworks.go      # Lista de 11 frameworks suportados
 │   │   └── detector.go        # DetectFramework, ListDetectedFrameworks
 │   ├── ui/
 │   │   ├── colors.go          # Paleta (Carmesim, Petroleo, VerdeMusgo, etc)
 │   │   ├── styles.go          # Estilos lipgloss (Bold, Dim, Success, Error, etc)
-│   │   ├── output.go          # PrintJSON, PrintKeyValue, PrintSuccess/Error/Warning/Info
+│   │   ├── output.go          # PrintJSON, PrintKeyValue, PrintSuccess/Error/Warning/Info, PrintNotice (stderr)
 │   │   ├── prompt.go          # Confirm, SelectOne, InputText, PrintBanner (usa charmbracelet/huh)
 │   │   ├── spinner.go         # RunWithSpinner (usa Bubble Tea)
 │   │   └── table.go           # Table com headers, rows, auto-width
@@ -79,14 +93,19 @@ cli/
 
 | Categoria | Comandos |
 |-----------|----------|
-| **Auth** | `login`, `logout`, `whoami` |
+| **Auth** | `login`, `logout`, `whoami`, `token` (tokens) → `create`, `list`, `revoke` |
+| **Workspace** | `workspace` (ws/workspaces) → `list`, `current` (show), `switch` |
 | **Projeto** | `init`, `link`, `unlink`, `list` (ls), `open`, `delete`, `status` |
-| **Deploy** | `deploy` (up), `redeploy`, `rollback`, `promote`, `down` |
-| **Serviço** | `add`, `ps`, `restart`, `logs`, `scale`, `run`, `shell`, `ssh` |
+| **Deploy** | `deploy`, `up` (source local — **não** é alias de deploy), `redeploy`, `rollback`, `promote`, `down` |
+| **Serviço** | `add`, `service delete`, `ps`, `restart`, `logs`, `scale`, `run`, `shell`, `ssh` |
 | **Database** | `db connect` (psql), `db backup` (pg_dump), `db restore` (pg_restore) |
 | **Ambiente** | `environment` (env) → `list`, `switch`, `new`, `delete` |
-| **Configuração** | `variables` (vars/variable) → `list`, `set`, `delete`, `shared {list,enable,disable}` · `domain` (domains) → `list`, `add`, `delete` |
-| **Utilitário** | `version`, `completion`, `upgrade` |
+| **Configuração** | `variables` (vars/variable) → `list`, `set`, `delete`, `shared {list,enable,disable}` · `domain` (domains) → `list`, `add`, `generate`, `delete` · `config` → `show` (get), `set` |
+| **Agendamento** | `scheduler` (cron/schedulers) → `list`, `create`, `run`, `pause`, `resume`, `delete` |
+| **Catálogo** | `catalog` → `list`, `describe`, `deploy` · `template` → `list`, `deploy` · `stack` (stacks) → `list`, `get`, `delete` |
+| **Storage** | `bucket` (buckets) → `public {show,enable,disable}` |
+| **Admin** | `admin storage pvcs` (exige role ADMIN) |
+| **Utilitário** | `version`, `completion`, `upgrade`, `skill` → `install`, `status` |
 
 ## Adicionando Novo Comando
 
@@ -151,6 +170,7 @@ func init() {
 - Use `requireAuth()` e `requireProject()` do `root.go`
 - Use `requireServiceConfig()` para comandos que operam em um serviço específico (logs, restart, scale, variables, domain, run)
 - Use `getOutputFormat()` e `getEnvironment()` do `root.go`
+- Para **mutar** o `.upuai/config.json` de um projeto já linkado, use `config.UpdateProjectConfig(func(c *config.ProjectConfig){...})` — nunca `LoadProjectConfig` + `SaveProjectConfig`. `SaveProjectConfig` grava relativo ao CWD e, rodado de um subdiretório, cria um config sombra que esconde o do root. `SaveProjectConfig` é só para `init`/`link`, que declaram o diretório como raiz do projeto.
 
 ## Padrão de Subcomandos
 
@@ -203,8 +223,8 @@ func init() {
 | Helper | Retorno | Descrição |
 |--------|---------|-----------|
 | `requireAuth()` | `error` | Verifica se há credenciais válidas |
-| `requireProject()` | `(string, error)` | Retorna projectID do config, erro se não linkado |
-| `requireServiceConfig()` | `(string, string, error)` | Retorna `(environmentID, serviceID)`, erro se não configurado |
+| `requireProject()` | `(string, error)` | Retorna projectID do config, erro se não linkado. **Também roda `ensureLinkedWorkspace()`** |
+| `requireServiceConfig()` | `(string, string, error)` | Retorna `(environmentID, serviceID)`, erro se não configurado. **Também roda `ensureLinkedWorkspace()`** — comandos de serviço (`ssh`, `run`, `shell`, `ps`, `config`, `scheduler`, `variables shared`) nunca passam por `requireProject()` |
 | `resolveServiceContext(serviceRef)` | `(envID, serviceID, error)` | Se `serviceRef` vazio, fallback para `requireServiceConfig`; senão resolve via `ListServices` (match por ID/Name/Slug) usando `resolveEnvironmentID` |
 | `resolveEnvironmentID(client, projectID)` | `(envID, error)` | Resolve envID na ordem: flag `-e` → linked envID → default name |
 | `getEnvironment()` | `string` | Retorna nome de ambiente (flag > config > default) |
@@ -212,6 +232,20 @@ func init() {
 | `getOutputFormat()` | `string` | Retorna formato (table \| json \| text) |
 
 **Padrão `-s/--service`**: comandos que operam num service (`run`, `shell`, `variables`) aceitam `-s <name|slug|id>` para target ad-hoc, paridade com `railway -s <svc>`. Implementação: chamar `resolveServiceContext(flagValue)` em vez de `requireServiceConfig()`.
+
+### Workspace (helpers em `cmd/workspace.go` / `cmd/workspace_pin.go`)
+
+| Helper | Retorno | Descrição |
+|--------|---------|-----------|
+| `activeWorkspace()` | `(*auth.TokenClaims, error)` | Workspace ativo lido do claim do JWT guardado (zero rede). `(nil, nil)` sem sessão de usuário **ou com machine token** — um `UPUAI_TOKEN` é opaco e seu workspace não é legível no cliente |
+| `activeWorkspacePin()` | `(id, name string)` | Par pra gravar no `.upuai/config.json` (vazio quando não há claim) |
+| `ensureLinkedWorkspace()` | `error` | Preflight: alinha a sessão ao workspace do diretório. Memoizado por processo |
+| `switchWorkspace(client, id)` | `error` | Troca + persiste o novo par de tokens. Barra machine token |
+| `adoptWorkspaceForProject(...)` | `(bool, error)` | Adota o workspace dono de um projeto após 403/404 — usado por `upuai link <id>` |
+
+**Workspace é implícito, nunca um parâmetro de comando**: a sessão é escopada a UM workspace (claim `tenantId`) e a API 404 tudo que está fora dele. O alinhamento vem do **pin do diretório** (`workspaceId` no `.upuai/config.json`), aplicado por `ensureLinkedWorkspace()` nos **dois** funis de contexto — `requireProject()` e `requireServiceConfig()`. Ancorar em só um deixa metade dos comandos descoberta (há teste de arquitetura travando o invariante: `TestWorkspacePreflightCoversBothContextFunnels`).
+
+Não adicione flag `--workspace` por comando: cada troca rotaciona os tokens da sessão inteira, então um override ad-hoc deixaria o usuário em outro workspace depois que o comando terminasse. A única exceção é `upuai link <id>`, onde adotar o workspace do argumento **é** o significado do comando (declarar o pin do diretório).
 
 ## API Client
 
@@ -241,9 +275,15 @@ O `doRequest` intercepta respostas 401 e tenta refresh via `/auth/refresh`. Se o
 
 ```go
 err := client.Get("/path", &result)
-if apiErr, ok := err.(*api.APIError); ok {
-    // apiErr.StatusCode, apiErr.Message
+
+// Ramifique pelo CÓDIGO estável do catálogo (apps/api/src/lib/error-codes.ts),
+// nunca pela mensagem — ela é texto de UI, traduzível e reescrito sem aviso.
+// Os helpers atravessam wraps de fmt.Errorf("%w").
+switch api.ErrorCode(err) {
+case "NOT_A_MEMBER":
+    // orientação específica
 }
+if api.StatusCode(err) == 404 { /* ... */ }
 ```
 
 ## Configuração — 3 Camadas
@@ -252,9 +292,11 @@ if apiErr, ok := err.(*api.APIError); ok {
 |--------|---------|--------|
 | Global | `~/.upuai/config.json` | Viper, defaults (apiUrl, environment, output) |
 | Credenciais | `~/.upuai/credentials.json` | Token, refresh token, user info |
-| Projeto | `.upuai/config.json` | projectId, projectName, environment, framework, environmentId, serviceId |
+| Projeto | `.upuai/config.json` | projectId, projectName, **workspaceId, workspaceName**, environment, framework, environmentId, serviceId |
 
 **Prioridade**: env var (`UPUAI_*`) > flag CLI > config projeto > config global > default
+
+O `workspaceId` é o **pin do diretório**: `init`/`link` gravam o workspace ativo, e `ensureLinkedWorkspace()` realinha a sessão quando você entra no diretório com outro workspace ativo. Configs anteriores ao campo são curados sob demanda via `GET /tenant/resolve` — ausência é estado válido, nunca erro.
 
 ## UI — Componentes Disponíveis
 

@@ -6,6 +6,8 @@ type LoginResponse struct {
 	Login        string  `json:"login"`
 	Token        string  `json:"token"`
 	RefreshToken string  `json:"refreshToken,omitempty"`
+	TenantID     string  `json:"tenantId,omitempty"`
+	TenantName   string  `json:"tenantName,omitempty"`
 	TenantPlan   string  `json:"tenantPlan,omitempty"`
 	AvatarUrl    *string `json:"avatarUrl,omitempty"`
 }
@@ -53,6 +55,8 @@ type CliSessionStatusResponse struct {
 	Login        string  `json:"login,omitempty"`
 	Token        string  `json:"token,omitempty"`
 	RefreshToken string  `json:"refreshToken,omitempty"`
+	TenantID     string  `json:"tenantId,omitempty"`
+	TenantName   string  `json:"tenantName,omitempty"`
 	TenantPlan   string  `json:"tenantPlan,omitempty"`
 	AvatarUrl    *string `json:"avatarUrl,omitempty"`
 }

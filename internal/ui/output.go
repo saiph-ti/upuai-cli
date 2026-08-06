@@ -64,3 +64,15 @@ func PrintWarning(msg string) {
 func PrintInfo(msg string) {
 	fmt.Println(Info.Render("ℹ") + " " + msg)
 }
+
+// PrintNotice reports something the CLI did on the user's behalf (e.g. switching
+// the active workspace to match the linked project).
+//
+// It writes to STDERR on purpose: a notice is diagnostics, not payload. Emitting
+// it on stdout would corrupt `upuai <cmd> -o json | jq` and every script that
+// pipes CLI output — the same reason PrintError uses stderr. Anything a machine
+// consumes belongs on stdout; anything a human reads about how the command ran
+// belongs here.
+func PrintNotice(msg string) {
+	fmt.Fprintln(os.Stderr, Muted.Render("→ "+msg))
+}

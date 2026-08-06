@@ -1,7 +1,7 @@
 ---
 name: upuai
 description: Deploy, manage, and troubleshoot projects on Upuai Cloud using the upuai CLI. Route-first skill — read the routing table below and follow the matching section.
-version: 1.0.0
+version: 1.1.0
 when-to-use: When the user wants to deploy a project to Upuai, check status/logs, configure env vars or domains, manage databases, roll back, promote between environments, or use the upuai CLI for any task.
 homepage: https://upuai.com.br
 ---
@@ -21,6 +21,7 @@ Read only the section(s) that match the user's intent.
 | "set env var / add domain / change build" | [Configure](#configure) |
 | "connect to db / backup / restore" | [Database](#database) |
 | Promote staging → production | [Environments](#environments) |
+| "project not found" / empty project list / user is in more than one org | [Workspaces](#workspaces) |
 | Anything else | Read `https://upuai.com.br/llms-full.txt` |
 
 ## Non-interactive contract
@@ -32,6 +33,7 @@ Always invoke `upuai` in non-interactive mode. Without these, prompts will hang 
 3. **JSON output for parsing**: pass `-o json` on `status`, `logs`, `list`, `vars list`, `domain list`, `env list`, and (when waiting) `deploy --wait -o json`.
 4. **Pre-supply flags on `init`**: when `--yes` is set, `init` requires `--name <slug>`. Pass `--framework <name>` to skip auto-detect prompts. Pass `--repo <owner>/<repo>` (or `--image <ref>`) to create a deployable service in one step instead of an empty placeholder. The CLI errors out with a clear message if a flag is missing rather than hanging on a prompt.
 5. **Block until terminal**: prefer `upuai deploy --wait` over polling `upuai status` yourself — the CLI already handles the polling, status transitions, timeout, and non-zero exit on failure.
+6. **Know your workspace**: every session is scoped to ONE workspace, and the API returns a plain 404 for anything outside it. `upuai whoami -o json` reports `workspace` / `workspaceId` / `role` — **except under `UPUAI_TOKEN`**, where it reports `machineToken: true` and omits them, because a machine token is opaque and its workspace is not readable client-side (it is fixed at creation; mint the token inside the workspace you intend to deploy to). A linked directory pins its workspace and the CLI realigns the session before any command that touches the linked project or service, printing `→ workspace: <name>` to **stderr** (stdout stays clean for `-o json`). See [Workspaces](#workspaces).
 
 Before running any command that touches user state, confirm the action with the user. Read flags from the user — do not invent project names, custom domains, or env-var values.
 
@@ -127,7 +129,7 @@ upuai up --wait --yes -o json
   upuai link <project-id> --service <service-name> --env production
   upuai deploy --wait --yes -o json
   ```
-- **No-CLI fallback** — if `upuai init --repo` fails with a GitHub auth error, the user has not authorized the Upuai GitHub App yet. Direct them to `https://app.upuai.com.br/projects/new` to install it; then re-run from this section.
+- **No-CLI fallback** — if `upuai init --repo` fails with a GitHub auth error, the user has not authorized the Upuai GitHub App yet. Direct them to `https://app.upuai.com.br/settings/account`, where GitHub installations are connected and managed; then re-run from this section.
 
 ### Flag reference (init)
 
@@ -163,6 +165,7 @@ If `status === "success"` and `url` responds 200, report it to the user. Otherwi
 
 Decision tree for "it's not working":
 
+0. **"Project not found" / `upuai list` is empty / a project you know exists 404s?** → you are almost certainly in the wrong workspace. `upuai workspace list` shows all of them and marks the active one; `upuai workspace switch <slug>` moves. The API cannot tell you "wrong workspace" directly — it returns 404 for anything outside the active one, by design. See [Workspaces](#workspaces).
 1. **Did `deploy` even trigger?** → `upuai status -o json | jq '.environments[].services[].lastDeployment'`. If everything is `null`, the project isn't linked or has no deployments yet — run `upuai link <project-id> --service <name> --env <env>` (the `--service` / `--env` flags skip the interactive picker).
 2. **Status `failed` or `build_failed`?** → `upuai logs -n 100 --build` shows the build output; `upuai logs -n 100 --deploy` shows the release-phase + rollout log; `upuai logs -n 100` shows runtime logs. Common causes:
    - **Build failure** (`build_failed`): missing `buildCommand` for the framework, missing dependency, wrong Node/Python version. Suggest `upuai.toml` with explicit `[build]` block — see [Configure](#configure).
@@ -271,9 +274,32 @@ upuai db restore -f backup.dump --yes  # pg_restore
 
 For automated tasks, use `--print` / `--output json` to fetch the connection string, then run queries via your own `psql` invocation. Do not run `upuai db connect` without `--print` inside an agent — it opens an interactive subshell.
 
+## Workspaces
+
+A **workspace** is the top of the hierarchy: `workspace → project → environment → service`. A user can belong to several (a personal one plus each organization they were invited to), but a session is scoped to **one at a time** — the `tenantId` claim in the token.
+
+This matters because the API is fail-closed: anything outside the active workspace answers **404, indistinguishable from "does not exist"**. An empty `upuai list` usually means "wrong workspace", not "no projects".
+
+```bash
+upuai workspace list                 # all your workspaces; ● marks the active one
+upuai workspace current -o json      # {"workspaceId","workspaceName","role"}
+upuai workspace switch tai           # by slug, name or ID
+upuai workspace switch               # interactive picker (needs a TTY)
+```
+
+**Linked directories pin their workspace.** `upuai init` / `upuai link` record it in `.upuai/config.json`, and any command that resolves the linked project or service realigns the session before calling the API — so entering a project of another workspace just works. The switch is announced on **stderr** (`→ workspace: TAI Tecnologia (was Gabriel Braga)`), never stdout, so `-o json` stays pipeable.
+
+Cross-workspace by ID:
+- `upuai link <project-id>` of another workspace **switches and links** — adopting the workspace is what linking means.
+- `-p <project-id>` of another workspace does **not** switch (a per-command flag must not move the whole session); it errors telling you which workspace owns the project.
+
+Switching rotates the session tokens and is durable: the server pins the workspace to the refresh-token line, so it survives token rotation and later commands.
+
+**Machine tokens do not switch.** A token from `upuai token create` is bound to the workspace it was minted in; `UPUAI_TOKEN` pointing at the wrong workspace is a pipeline misconfiguration — mint a new token inside the target workspace. The CLI says so instead of failing with a generic 403.
+
 ## Environments
 
-Upuai supports `production`, `staging`, `development` by default; custom names allowed.
+Environments live **inside** a project, which lives inside a workspace. Upuai supports `production`, `staging`, `development` by default; custom names allowed.
 
 ```bash
 upuai env list                              # list environments
@@ -318,7 +344,7 @@ Pass one of these to `--framework`:
 ## Honest limitations
 
 - This skill makes you knowledgeable about the CLI; it does not give you cluster access. The CLI talks to Upuai's API on the user's behalf.
-- `upuai login` is interactive (browser OAuth or email OTP) — the only supported auth flow, same pattern as `railway login` / `vercel login` / `fly auth login`. On agent runners without a browser, ask the user to log in once on their own machine. Credentials persist in `~/.upuai/credentials.json` and refresh automatically; no headless / token-based auth path exists today.
+- `upuai login` is interactive (browser OAuth or email OTP), same pattern as `railway login` / `vercel login` / `fly auth login`. On agent runners without a browser, ask the user to log in once on their own machine. Credentials persist in `~/.upuai/credentials.json` and refresh automatically. For headless/CI there **is** a sanctioned path — a scoped machine token in `UPUAI_TOKEN` (see the [Non-interactive contract](#non-interactive-contract)); it is opaque, long-lived, revocable, and bound to the workspace it was minted in.
 - `upuai add` (without `--type`/`--name`/`--repo`/`--image`), `upuai link` (without `--service`/`--env`), `upuai shell` (subshell), and `upuai db connect` (without `--print`) all need a TTY. Use the non-interactive flag variants noted in the relevant sections above.
 - `upuai run` / `upuai shell` run **locally** with the service env vars injected (like `railway run`). `upuai ssh [-s svc] [-- cmd]` opens a session **inside the running production container** (like `railway ssh` / `fly ssh console`) — generic and stack-agnostic (`upuai ssh -- bin/rails console`, `-- python manage.py shell`, `-- node`, or no command for a shell). It runs in the live pod, so destructive commands affect the serving container. **`ssh` works non-interactively too**: a PTY is allocated only when stdin/stdout are terminals, so pipes and redirects return byte-exact output with separate stdout/stderr (`echo "SELECT 1" | upuai ssh -s db -- psql`, `upuai ssh -- cat log.txt > out.txt`). Force with `-t/--tty` or disable with `-T/--no-tty` (parity with `ssh -t/-T`).
 - `upuai variables set KEY=val --scope runtime|build` scopes a var to a single phase: `runtime` keeps it out of the build (e.g. `DATABASE_URL`, secrets — avoids baking into a layer / breaking `assets:precompile`); `build` keeps it out of the running container (e.g. a private registry/npm token). Default `both` = build + runtime (Railway/Vercel parity).

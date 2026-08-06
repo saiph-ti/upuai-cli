@@ -116,6 +116,11 @@ func requireProject() (string, error) {
 	if ref == "" {
 		return "", errNoProject
 	}
+	// Alinha a sessão ao workspace do diretório ANTES de qualquer chamada — as
+	// listagens abaixo (e o comando que chamou) só enxergam o workspace ativo.
+	if err := ensureLinkedWorkspace(); err != nil {
+		return "", err
+	}
 	// Só o flag -p pode trazer um NOME de projeto; a config linkada (.upuai/config.json)
 	// já guarda o ID canônico que init/link gravaram. Resolver a config seria uma chamada
 	// de rede inútil — então o fast-path devolve o ID linkado direto.
@@ -134,7 +139,47 @@ func resolveProjectRef(ref string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve project %q: %w", ref, err)
 	}
-	return matchProjectRef(projects, ref)
+	resolved, err := matchProjectRef(projects, ref)
+	if err != nil {
+		return "", err
+	}
+	// Zero match devolve o ref inalterado (ver matchProjectRef). Antes de deixar
+	// a API responder um 404 mudo, checa se o ref é um projeto de OUTRO workspace
+	// do usuário — o único caso em que "não existe" é enganoso. Só roda no
+	// caminho de erro, e só com -p: nenhum custo no fluxo normal.
+	if resolved == ref && !containsProject(projects, ref) {
+		if hint := crossWorkspaceHint(client, ref); hint != nil {
+			return "", hint
+		}
+	}
+	return resolved, nil
+}
+
+func containsProject(projects []api.Project, id string) bool {
+	for _, p := range projects {
+		if p.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// crossWorkspaceHint devolve um erro explicando que o projeto existe, mas em
+// outro workspace do usuário — ou nil quando não é esse o caso (ref é um nome
+// inexistente, um ID de projeto de terceiros, ou a API está fora). Nunca
+// troca de workspace: -p é ad-hoc, e mudar a sessão inteira por causa de uma
+// flag deixaria o usuário em outro workspace depois do comando.
+func crossWorkspaceHint(client *api.Client, ref string) error {
+	resolved, err := client.ResolveProjectWorkspace(ref)
+	if err != nil {
+		return nil
+	}
+	target := resolved.TenantSlug
+	if target == "" {
+		target = resolved.TenantID
+	}
+	return fmt.Errorf("project %q belongs to workspace %q, not the active one — run 'upuai workspace switch %s' first",
+		resolved.ProjectName, resolved.TenantName, target)
 }
 
 // matchProjectRef resolve uma referência de projeto (ID ou nome, case-insensitive)
@@ -173,6 +218,14 @@ func requireServiceConfig() (string, string, error) {
 	cfg, _ := config.LoadProjectConfig()
 	if cfg == nil || cfg.EnvironmentID == "" || cfg.ServiceID == "" {
 		return "", "", errNoServiceConfig
+	}
+	// Segundo funil do preflight de workspace. `ssh`, `run`, `shell`, `ps`,
+	// `config`, `scheduler` e `variables shared` operam no serviço linkado sem
+	// nunca chamar requireProject() — ancorar o alinhamento só lá deixava esses
+	// comandos batendo no mesmo 404 mudo que o pin existe pra evitar. É idempotente
+	// (memoizado por processo), então quem passa pelos dois funis só troca uma vez.
+	if err := ensureLinkedWorkspace(); err != nil {
+		return "", "", err
 	}
 	return cfg.EnvironmentID, cfg.ServiceID, nil
 }

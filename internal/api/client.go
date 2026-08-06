@@ -103,6 +103,7 @@ func (c *Client) parseError(resp *http.Response) error {
 		var parsed struct {
 			Message   string          `json:"message"`
 			Error     string          `json:"error"`
+			Code      string          `json:"code"`
 			RequestID string          `json:"requestId"`
 			Details   json.RawMessage `json:"details"`
 		}
@@ -112,6 +113,7 @@ func (c *Client) parseError(resp *http.Response) error {
 			} else if parsed.Error != "" {
 				apiErr.Message = parsed.Error
 			}
+			apiErr.Code = parsed.Code
 			apiErr.RequestID = parsed.RequestID
 			// `details` da API é Record<string, unknown> | string[]. Decode
 			// best-effort no shape comum (validação Zod = {campo: "msg"}); shapes

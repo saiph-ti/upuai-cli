@@ -216,10 +216,15 @@ Examples:
 			return fmt.Errorf("failed to create service: %w", err)
 		}
 
-		// Save local config
+		// Save local config. O projeto acabou de ser criado no workspace ativo da
+		// sessão, então o claim é a fonte correta do pin — sem round-trip extra.
+		workspaceID, workspaceName := activeWorkspacePin()
+
 		projectCfg := &config.ProjectConfig{
 			ProjectID:     project.ID,
 			ProjectName:   project.Name,
+			WorkspaceID:   workspaceID,
+			WorkspaceName: workspaceName,
 			ServiceID:     service.ID,
 			ServiceName:   service.Name,
 			EnvironmentID: envID,

@@ -101,8 +101,18 @@ Then ask the agent in natural language: *"deploy this to upuai"*. Full guide and
 |---------|-------------|
 | `login` | Authenticate with Upuai Cloud (browser one-click or Email OTP) |
 | `logout` | Log out and clear stored credentials |
-| `whoami` | Show current authenticated user and project context |
+| `whoami` | Show current authenticated user, workspace and project context |
 | `token` | Manage scoped, revocable API tokens for CI/automation — `create`/`list`/`revoke`. The secret is shown once; use it non-interactively via `UPUAI_TOKEN` |
+
+### Workspace
+
+| Command | Alias | Description |
+|---------|-------|-------------|
+| `workspace list` | `ws ls` | List every workspace you belong to (● marks the active one) |
+| `workspace current` | `show` | Show the active workspace, its ID and your role |
+| `workspace switch [ref]` | | Switch the active workspace by slug, name or ID (interactive picker without an argument) |
+
+See [Workspaces](#workspaces) for how linked directories pin their workspace.
 
 ### Project
 
@@ -207,6 +217,37 @@ Then ask the agent in natural language: *"deploy this to upuai"*. Full guide and
 | `--yes` | `-y` | Skip confirmation prompts |
 | `--verbose` | `-v` | Enable verbose output |
 
+## Workspaces
+
+A workspace is the top of the hierarchy — `workspace → project → environment → service`. You may belong to several (your personal one, plus each organization that invited you), but a session is scoped to **one at a time**.
+
+That scoping is invisible until it bites: anything outside the active workspace answers **404, indistinguishable from "does not exist"**. An empty `upuai ls` usually means "wrong workspace", not "no projects".
+
+```bash
+upuai workspace list            # ● marks the active one
+upuai workspace switch tai      # by slug, name or ID
+upuai workspace switch          # interactive picker
+upuai workspace current -o json # {"workspaceId","workspaceName","role"}
+```
+
+**Linked directories remember their workspace.** `upuai init` and `upuai link` record it in `.upuai/config.json`, and any command that operates on the linked project or service realigns the session before talking to the API — so `cd`-ing into a project of another workspace just works:
+
+```
+$ cd ~/code/projeto-da-tai && upuai up
+→ workspace: TAI Tecnologia (was Gabriel Braga)
+✓ Deployed
+```
+
+The `→` line goes to **stderr**, so `upuai status -o json | jq` stays clean.
+
+A directory linked before this feature existed has no workspace recorded; the first command fills it in automatically, and the notice then reads just `→ workspace: TAI Tecnologia`.
+
+`upuai link <project-id>` also works across workspaces: if the ID belongs to another workspace you are a member of, the CLI switches to it and links — that switch *is* what linking means. Passing `-p <id>` of another workspace does **not** switch (a per-command flag should not move your whole session); it tells you which workspace the project lives in.
+
+Switching rotates your session tokens and the server pins the workspace to the refresh-token line, so it survives token rotation — you stay there until you switch again.
+
+Machine tokens (`UPUAI_TOKEN`) are bound to the workspace they were created in and cannot switch. Their workspace is not readable client-side either, so `upuai whoami` reports `machineToken: true` instead of guessing. To deploy to another workspace from CI, mint a token inside it.
+
 ## Authentication
 
 Two authentication methods are supported:
@@ -257,10 +298,14 @@ Created by `upuai init` or `upuai link` in the project root. Automatically added
 {
   "projectId": "abc-123",
   "projectName": "my-app",
+  "workspaceId": "ws-456",
+  "workspaceName": "TAI Tecnologia",
   "environment": "staging",
   "framework": "Next.js"
 }
 ```
+
+`workspaceId` pins the directory to the workspace that owns the project — see [Workspaces](#workspaces). Configs written before this field existed keep working and are filled in on the next command.
 
 ### Environment variables
 
@@ -270,6 +315,7 @@ All settings can be overridden with `UPUAI_` prefix:
 |----------|-------------|
 | `UPUAI_API_URL` | API base URL (overrides config) |
 | `UPUAI_WEB_URL` | Web dashboard URL (overrides config) |
+| `UPUAI_TOKEN` | Scoped machine token from `upuai token create`, for CI/automation. Takes precedence over the stored login. Bound to the workspace it was minted in — it cannot switch workspaces |
 | `UPUAI_DISABLE_UPDATE_CHECK` | Set to `1` to suppress the periodic "new version available" nudge (useful in CI/agent contexts) |
 | `UPUAI_SKIP_SKILL_INSTALL` | Set to `1` to disable auto-installing the Upuai agent skill into linked projects (see [Use with AI agents](#use-with-ai-agents)) |
 

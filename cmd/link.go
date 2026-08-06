@@ -44,8 +44,25 @@ Examples:
 				project, fetchErr = client.GetProject(args[0])
 				return fetchErr
 			})
+			// Um ID copiado do dashboard de OUTRO workspace responde 404 igual a
+			// um ID inexistente. Antes de desistir, adota o workspace dono e tenta
+			// de novo — linkar é justamente declarar o workspace deste diretório.
 			if err != nil {
-				return fmt.Errorf("project not found: %w", err)
+				switched, adoptErr := adoptWorkspaceForProject(client, args[0], err)
+				if adoptErr != nil {
+					return adoptErr
+				}
+				if !switched {
+					return fmt.Errorf("project not found: %w", err)
+				}
+				err = ui.RunWithSpinner("Fetching project...", func() error {
+					var fetchErr error
+					project, fetchErr = client.GetProject(args[0])
+					return fetchErr
+				})
+				if err != nil {
+					return fmt.Errorf("project not found: %w", err)
+				}
 			}
 		} else if flagLinkService != "" || flagLinkEnv != "" {
 			// Non-interactive: use current project from config
@@ -201,9 +218,16 @@ Examples:
 			}
 		}
 
+		// O projeto foi escolhido a partir do que a API listou, e a API só lista o
+		// workspace ativo — então o workspace da sessão É o dono do projeto. Pinar
+		// a partir do claim evita uma chamada de rede só pra confirmar o óbvio.
+		workspaceID, workspaceName := activeWorkspacePin()
+
 		cfg := &config.ProjectConfig{
 			ProjectID:     project.ID,
 			ProjectName:   project.Name,
+			WorkspaceID:   workspaceID,
+			WorkspaceName: workspaceName,
 			ServiceID:     serviceID,
 			ServiceName:   serviceName,
 			EnvironmentID: selectedEnv.ID,

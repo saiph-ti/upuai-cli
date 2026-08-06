@@ -271,15 +271,11 @@ func switchToEnvironment(environments []api.Environment, name string) error {
 		return fmt.Errorf("environment %q not found", name)
 	}
 
-	cfg, _ := config.LoadProjectConfig()
-	if cfg == nil {
-		return fmt.Errorf("no project config found")
-	}
-
-	cfg.EnvironmentID = targetEnv.ID
-	cfg.Environment = targetEnv.Name
-
-	if err := config.SaveProjectConfig(cfg); err != nil {
+	err := config.UpdateProjectConfig(func(c *config.ProjectConfig) {
+		c.EnvironmentID = targetEnv.ID
+		c.Environment = targetEnv.Name
+	})
+	if err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 

@@ -154,9 +154,10 @@ Examples:
 			)
 
 			if cfg.ServiceID == "" {
-				cfg.ServiceID = bucketResp.ServiceID
-				cfg.ServiceName = bucketResp.Name
-				_ = config.SaveProjectConfig(cfg)
+				_ = config.UpdateProjectConfig(func(c *config.ProjectConfig) {
+					c.ServiceID = bucketResp.ServiceID
+					c.ServiceName = bucketResp.Name
+				})
 				fmt.Println()
 				ui.PrintInfo("Linked to new bucket")
 			}
@@ -300,9 +301,10 @@ Examples:
 
 		// Update local config if no service was linked
 		if cfg.ServiceID == "" {
-			cfg.ServiceID = service.ID
-			cfg.ServiceName = service.Name
-			_ = config.SaveProjectConfig(cfg)
+			_ = config.UpdateProjectConfig(func(c *config.ProjectConfig) {
+				c.ServiceID = service.ID
+				c.ServiceName = service.Name
+			})
 			fmt.Println()
 			ui.PrintInfo("Linked to new service")
 		}
@@ -369,9 +371,10 @@ func runManagedDatabaseAdd(projectID string, cfg *config.ProjectConfig, name, en
 
 	// Liga o config local ao primeiro serviço criado se nada estava linkado.
 	if cfg.ServiceID == "" && len(resp.Services) > 0 {
-		cfg.ServiceID = resp.Services[0].ID
-		cfg.ServiceName = resp.Services[0].Name
-		_ = config.SaveProjectConfig(cfg)
+		_ = config.UpdateProjectConfig(func(c *config.ProjectConfig) {
+			c.ServiceID = resp.Services[0].ID
+			c.ServiceName = resp.Services[0].Name
+		})
 		fmt.Println()
 		ui.PrintInfo("Linked to new managed database")
 	}
