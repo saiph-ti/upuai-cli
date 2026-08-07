@@ -8,7 +8,6 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/upuai-cloud/cli/internal/api"
-	"github.com/upuai-cloud/cli/internal/config"
 	"github.com/upuai-cloud/cli/internal/ui"
 )
 
@@ -216,13 +215,12 @@ Examples:
 			return fmt.Errorf("failed to load template %q: %w", slug, err)
 		}
 
-		// 2. Resolve environment — flag > project config
+		// 2. Resolve environment — flag > ambiente do PROJETO alvo. O env linkado
+		// do diretório só entra quando descreve o projeto alvo (resolveEnvironmentID
+		// checa): com -p apontando outro, aquele ID é de outra árvore.
 		environmentID := flagCatalogDeployEnvID
 		if environmentID == "" {
-			cfg, _ := config.LoadProjectConfig()
-			if cfg != nil {
-				environmentID = cfg.EnvironmentID
-			}
+			environmentID, _ = resolveEnvironmentID(client, projectID)
 		}
 		if environmentID == "" {
 			// interactive fallback

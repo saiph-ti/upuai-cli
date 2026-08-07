@@ -8,7 +8,10 @@ import (
 	"github.com/upuai-cloud/cli/internal/ui"
 )
 
-var restartProcess string
+var (
+	restartProcess string
+	restartService string
+)
 
 var restartCmd = &cobra.Command{
 	Use:   "restart",
@@ -21,17 +24,14 @@ By default (no --process) the whole service / web process is restarted. Pass
 
 Examples:
   upuai restart                  # restart the service (web)
+  upuai restart -s worker-api    # restart another service of the project
   upuai restart --process worker # restart only the "worker" process`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := requireAuth(); err != nil {
 			return err
 		}
 
-		if _, err := requireProject(); err != nil {
-			return err
-		}
-
-		envID, serviceID, err := requireServiceConfig()
+		envID, serviceID, err := resolveServiceContext(restartService)
 		if err != nil {
 			return err
 		}
@@ -77,5 +77,6 @@ Examples:
 
 func init() {
 	restartCmd.Flags().StringVar(&restartProcess, "process", "", "Process name to restart (multi-process service; default: web; see 'upuai ps')")
+	restartCmd.Flags().StringVarP(&restartService, "service", "s", "", "Service name, slug, or ID (overrides linked service)")
 	rootCmd.AddCommand(restartCmd)
 }

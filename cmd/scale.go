@@ -10,6 +10,8 @@ import (
 	"github.com/upuai-cloud/cli/internal/ui"
 )
 
+var scaleService string
+
 var scaleCmd = &cobra.Command{
 	Use:   "scale <count> | <name>=<count> [<name>=<count>...]",
 	Short: "Scale the service or a specific process to N replicas",
@@ -22,6 +24,7 @@ service's processes.
 
 Examples:
   upuai scale 3                # scale the service to 3 replicas
+  upuai scale 3 -s worker-api  # scale another service of the project
   upuai scale web=2 worker=1   # scale process "web" to 2 and "worker" to 1`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -29,11 +32,7 @@ Examples:
 			return err
 		}
 
-		if _, err := requireProject(); err != nil {
-			return err
-		}
-
-		envID, serviceID, err := requireServiceConfig()
+		envID, serviceID, err := resolveServiceContext(scaleService)
 		if err != nil {
 			return err
 		}
@@ -94,5 +93,6 @@ func scaleWhole(client *api.Client, envID, serviceID string, count int) error {
 }
 
 func init() {
+	scaleCmd.Flags().StringVarP(&scaleService, "service", "s", "", "Service name, slug, or ID (overrides linked service)")
 	rootCmd.AddCommand(scaleCmd)
 }

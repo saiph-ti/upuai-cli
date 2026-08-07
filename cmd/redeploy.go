@@ -8,6 +8,8 @@ import (
 	"github.com/upuai-cloud/cli/internal/ui"
 )
 
+var redeployService string
+
 var redeployCmd = &cobra.Command{
 	Use:   "redeploy",
 	Short: "Redeploy the latest deployment",
@@ -16,11 +18,7 @@ var redeployCmd = &cobra.Command{
 			return err
 		}
 
-		if _, err := requireProject(); err != nil {
-			return err
-		}
-
-		envID, serviceID, err := requireServiceConfig()
+		envID, serviceID, err := resolveServiceContext(redeployService)
 		if err != nil {
 			return err
 		}
@@ -91,5 +89,6 @@ var redeployCmd = &cobra.Command{
 }
 
 func init() {
+	redeployCmd.Flags().StringVarP(&redeployService, "service", "s", "", "Service name, slug, or ID (overrides linked service)")
 	rootCmd.AddCommand(redeployCmd)
 }

@@ -223,15 +223,15 @@ func init() {
 | Helper | Retorno | Descrição |
 |--------|---------|-----------|
 | `requireAuth()` | `error` | Verifica se há credenciais válidas |
-| `requireProject()` | `(string, error)` | Retorna projectID do config, erro se não linkado. **Também roda `ensureLinkedWorkspace()`** |
-| `requireServiceConfig()` | `(string, string, error)` | Retorna `(environmentID, serviceID)`, erro se não configurado. **Também roda `ensureLinkedWorkspace()`** — comandos de serviço (`ssh`, `run`, `shell`, `ps`, `config`, `scheduler`, `variables shared`) nunca passam por `requireProject()` |
+| `requireProject()` | `(string, error)` | Retorna projectID (flag `-p` resolvido ou config), erro se não linkado. **Também roda `ensureLinkedWorkspace()`**. Memoizado por processo |
+| `requireServiceConfig()` | `(string, string, error)` | Retorna `(environmentID, serviceID)` do diretório, erro se não configurado. **Também roda `ensureLinkedWorkspace()`** — comandos de serviço (`ssh`, `run`, `shell`, `ps`, `config`, `scheduler`, `variables shared`) sem `-s` nunca passam por `requireProject()`. **Recusa quando `-p` nomeia outro projeto**: o serviço gravado é deste diretório |
 | `resolveServiceContext(serviceRef)` | `(envID, serviceID, error)` | Se `serviceRef` vazio, fallback para `requireServiceConfig`; senão resolve via `ListServices` (match por ID/Name/Slug) usando `resolveEnvironmentID` |
 | `resolveEnvironmentID(client, projectID)` | `(envID, error)` | Resolve envID na ordem: flag `-e` → linked envID → default name |
 | `getEnvironment()` | `string` | Retorna nome de ambiente (flag > config > default) |
 | `getProjectID()` | `string` | Retorna project ID (flag > config > vazio) |
 | `getOutputFormat()` | `string` | Retorna formato (table \| json \| text) |
 
-**Padrão `-s/--service`**: comandos que operam num service (`run`, `shell`, `variables`) aceitam `-s <name|slug|id>` para target ad-hoc, paridade com `railway -s <svc>`. Implementação: chamar `resolveServiceContext(flagValue)` em vez de `requireServiceConfig()`.
+**Padrão `-s/--service`**: TODO comando que opera num service aceita `-s <name|slug|id>` para target ad-hoc, paridade com `railway -s <svc>`. Implementação: chamar `resolveServiceContext(flagValue)` — nunca `requireProject()` + `requireServiceConfig()` em sequência, que resolvia o `-p` e depois o descartava, agindo no serviço do diretório. Comandos que mudam estado (`deploy`, `up`, `redeploy`, `rollback`, `restart`, `scale`, `down`, `domain`, `config set`) foram os últimos a ganhar a flag e eram justamente os que mais doíam com o alvo errado.
 
 ### Workspace (helpers em `cmd/workspace.go` / `cmd/workspace_pin.go`)
 
@@ -239,11 +239,19 @@ func init() {
 |--------|---------|-----------|
 | `activeWorkspace()` | `(*auth.TokenClaims, error)` | Workspace ativo lido do claim do JWT guardado (zero rede). `(nil, nil)` sem sessão de usuário **ou com machine token** — um `UPUAI_TOKEN` é opaco e seu workspace não é legível no cliente |
 | `activeWorkspacePin()` | `(id, name string)` | Par pra gravar no `.upuai/config.json` (vazio quando não há claim) |
-| `ensureLinkedWorkspace()` | `error` | Preflight: alinha a sessão ao workspace do diretório. Memoizado por processo |
+| `decideTargetAnchor(ref, linkedID, linkedName)` | `targetAnchor` | Puro, zero rede: `anchorDirectory` sem `-p` ou com `-p` nomeando o próprio projeto linkado; `anchorFlag` caso contrário |
+| `commandAnchor(cfg)` | `targetAnchor` | `decideTargetAnchor` aplicado ao diretório atual |
+| `ensureLinkedWorkspace()` | `error` | Preflight: alinha a sessão ao workspace do diretório. Memoizado por processo. **No-op quando o anchor é `anchorFlag`** |
+| `linkedServiceForTarget()` | `string` | `serviceId` do diretório, ou `""` quando `-p` nomeia outro projeto (para comandos onde o serviço é opcional, ex. `deploy`) |
+| `shouldLinkNewService(cfg)` | `bool` | Se um serviço recém-criado deve virar o linkado do diretório |
 | `switchWorkspace(client, id)` | `error` | Troca + persiste o novo par de tokens. Barra machine token |
 | `adoptWorkspaceForProject(...)` | `(bool, error)` | Adota o workspace dono de um projeto após 403/404 — usado por `upuai link <id>` |
 
 **Workspace é implícito, nunca um parâmetro de comando**: a sessão é escopada a UM workspace (claim `tenantId`) e a API 404 tudo que está fora dele. O alinhamento vem do **pin do diretório** (`workspaceId` no `.upuai/config.json`), aplicado por `ensureLinkedWorkspace()` nos **dois** funis de contexto — `requireProject()` e `requireServiceConfig()`. Ancorar em só um deixa metade dos comandos descoberta (há teste de arquitetura travando o invariante: `TestWorkspacePreflightCoversBothContextFunnels`).
+
+**O alinhamento segue o ALVO, não o diretório** (`targetAnchor`). Sem `-p`, ou com `-p` nomeando o próprio projeto linkado, o alvo é o diretório e o pin manda. Com `-p` nomeando outro projeto, o diretório deixa de ser o alvo: o pin não move a sessão, e o `environmentId`/`serviceId` gravados não são reusados. Compor as duas regras não é opcional — enquanto o pin era aplicado mesmo com `-p`, o CLI sugeria `upuai workspace switch <ws>` e desfazia a troca na invocação seguinte, um ciclo insatisfazível de dentro de qualquer diretório linkado (`TestPreflightConsultsTheAnchor`, `TestEnsureLinkedWorkspaceYieldsToProjectFlag`).
+
+Corolário: contexto derivado do diretório só vale quando o diretório É o alvo. `requireServiceConfig()` recusa em vez de agir no serviço errado, `resolveEnvironmentID()` ignora o env linkado de outro projeto, e comandos onde o serviço é opcional usam `linkedServiceForTarget()`. Nunca leia `cfg.EnvironmentID`/`cfg.ServiceID` direto num comando — passe por esses helpers.
 
 Não adicione flag `--workspace` por comando: cada troca rotaciona os tokens da sessão inteira, então um override ad-hoc deixaria o usuário em outro workspace depois que o comando terminasse. A única exceção é `upuai link <id>`, onde adotar o workspace do argumento **é** o significado do comando (declarar o pin do diretório).
 

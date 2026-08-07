@@ -6,7 +6,6 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/upuai-cloud/cli/internal/api"
-	"github.com/upuai-cloud/cli/internal/config"
 	"github.com/upuai-cloud/cli/internal/ui"
 )
 
@@ -94,12 +93,14 @@ Examples:
 			return err
 		}
 
-		cfg, _ := config.LoadProjectConfig()
-		if cfg == nil || cfg.EnvironmentID == "" {
-			return errNoServiceConfig
-		}
-
 		client := api.NewClient()
+
+		// Ambiente do PROJETO alvo, não o environmentId cru do diretório — com -p
+		// nomeando outro projeto aquele ID é de outra árvore.
+		envID, err := resolveEnvironmentID(client, projectID)
+		if err != nil {
+			return err
+		}
 
 		// Resolve template ID
 		templateID := flagTemplateID
@@ -175,7 +176,7 @@ Examples:
 			result, deployErr = client.DeployTemplate(projectID, &api.DeployTemplateRequest{
 				TemplateID:    templateID,
 				Name:          flagTemplateName,
-				EnvironmentID: cfg.EnvironmentID,
+				EnvironmentID: envID,
 			})
 			return deployErr
 		})
@@ -204,7 +205,7 @@ Examples:
 			var vars []api.EnvVar
 			varErr := ui.RunWithSpinner("Fetching connection details...", func() error {
 				var fetchErr error
-				vars, fetchErr = client.ListVariables(cfg.EnvironmentID, svc.ID)
+				vars, fetchErr = client.ListVariables(envID, svc.ID)
 				return fetchErr
 			})
 			if varErr == nil {

@@ -70,10 +70,17 @@ Examples:
 			return err
 		}
 
-		cfg, _ := config.LoadProjectConfig()
-		if cfg == nil || cfg.EnvironmentID == "" {
-			return errNoServiceConfig
+		client := api.NewClient()
+
+		// Ambiente vem do PROJETO alvo, nunca do environmentId cru do diretório:
+		// com -p nomeando outro projeto, aquele ID pertence a outra árvore e o
+		// serviço nasceria no ambiente errado. resolveEnvironmentID já aplica a
+		// precedência certa (-e → env linkado do mesmo projeto → default).
+		envID, err := resolveEnvironmentID(client, projectID)
+		if err != nil {
+			return err
 		}
+		cfg, _ := config.LoadProjectConfig()
 
 		// Select service type (skip picker if --image or --repo implies the type)
 		serviceTypeLabel := flagAddType
@@ -102,7 +109,7 @@ Examples:
 		// nem variáveis, o que confundia (relato de integração Rails). Mesmo
 		// padrão do bucket acima: tipo com provisionamento dedicado.
 		if serviceType == "database" {
-			return runManagedDatabaseAdd(projectID, cfg, flagAddName, flagAddEngine)
+			return runManagedDatabaseAdd(projectID, envID, cfg, flagAddName, flagAddEngine)
 		}
 
 		// Enter service name
@@ -118,8 +125,6 @@ Examples:
 			return fmt.Errorf("service name is required")
 		}
 
-		client := api.NewClient()
-
 		// Bucket has its own provisioning endpoint that creates the underlying
 		// MinIO bucket + credentials in addition to the canvas service node.
 		// Source/builder/start-command flags are not meaningful here.
@@ -130,7 +135,7 @@ Examples:
 				bucketResp, createErr = client.CreateBucketAsService(projectID, &api.CreateBucketAsServiceRequest{
 					Name:          name,
 					Region:        defaultBucketRegion,
-					EnvironmentID: cfg.EnvironmentID,
+					EnvironmentID: envID,
 				})
 				return createErr
 			})
@@ -153,7 +158,7 @@ Examples:
 				"Region", bucketResp.Region,
 			)
 
-			if cfg.ServiceID == "" {
+			if shouldLinkNewService(cfg) {
 				_ = config.UpdateProjectConfig(func(c *config.ProjectConfig) {
 					c.ServiceID = bucketResp.ServiceID
 					c.ServiceName = bucketResp.Name
@@ -229,7 +234,7 @@ Examples:
 				Name:          name,
 				Type:          serviceType,
 				WorkloadKind:  workloadKind,
-				EnvironmentID: cfg.EnvironmentID,
+				EnvironmentID: envID,
 				Source:        source,
 			})
 			return createErr
@@ -251,7 +256,7 @@ Examples:
 				vars = append(vars, api.VariableInput{Key: "DOCKER_REGISTRY_HOST", Value: flagAddRegistryHost})
 			}
 			err = ui.RunWithSpinner("Setting registry credentials...", func() error {
-				_, setErr := client.SetVariables(cfg.EnvironmentID, service.ID, vars)
+				_, setErr := client.SetVariables(envID, service.ID, vars)
 				return setErr
 			})
 			if err != nil {
@@ -278,7 +283,7 @@ Examples:
 				}
 			}
 			err = ui.RunWithSpinner("Configuring service...", func() error {
-				return client.UpdateInstance(cfg.EnvironmentID, service.ID, req)
+				return client.UpdateInstance(envID, service.ID, req)
 			})
 			if err != nil {
 				ui.PrintWarning(fmt.Sprintf("Service created but config update failed: %v", err))
@@ -300,7 +305,7 @@ Examples:
 		)
 
 		// Update local config if no service was linked
-		if cfg.ServiceID == "" {
+		if shouldLinkNewService(cfg) {
 			_ = config.UpdateProjectConfig(func(c *config.ProjectConfig) {
 				c.ServiceID = service.ID
 				c.ServiceName = service.Name
@@ -320,7 +325,7 @@ Examples:
 // momento da criação. Seleção do engine: flag --engine (match por engine ou
 // nome) ou picker interativo. Sem nome → o template usa o default
 // "<engine>-<versão>".
-func runManagedDatabaseAdd(projectID string, cfg *config.ProjectConfig, name, engine string) error {
+func runManagedDatabaseAdd(projectID, envID string, cfg *config.ProjectConfig, name, engine string) error {
 	client := api.NewClient()
 
 	var templates []api.DatabaseTemplate
@@ -344,7 +349,7 @@ func runManagedDatabaseAdd(projectID string, cfg *config.ProjectConfig, name, en
 	req := &api.DeployTemplateRequest{
 		TemplateID:    chosen.ID,
 		Name:          name,
-		EnvironmentID: cfg.EnvironmentID,
+		EnvironmentID: envID,
 	}
 	var resp *api.DeployTemplateResponse
 	err = ui.RunWithSpinner(fmt.Sprintf("Provisioning managed %s...", chosen.Engine), func() error {
@@ -370,7 +375,7 @@ func runManagedDatabaseAdd(projectID string, cfg *config.ProjectConfig, name, en
 	ui.PrintInfo("Connection variables (DATABASE_URL/REDIS_URL/...) are injected automatically — reference them from your app service.")
 
 	// Liga o config local ao primeiro serviço criado se nada estava linkado.
-	if cfg.ServiceID == "" && len(resp.Services) > 0 {
+	if shouldLinkNewService(cfg) && len(resp.Services) > 0 {
 		_ = config.UpdateProjectConfig(func(c *config.ProjectConfig) {
 			c.ServiceID = resp.Services[0].ID
 			c.ServiceName = resp.Services[0].Name

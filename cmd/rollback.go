@@ -5,13 +5,13 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/upuai-cloud/cli/internal/api"
-	"github.com/upuai-cloud/cli/internal/config"
 	"github.com/upuai-cloud/cli/internal/ui"
 )
 
 var (
 	rollbackListFlag bool
 	rollbackToFlag   string
+	rollbackService  string
 )
 
 var rollbackCmd = &cobra.Command{
@@ -27,19 +27,15 @@ Without flags, rolls back to the previous deployment.`,
 			return err
 		}
 
-		if _, err := requireProject(); err != nil {
+		envID, serviceID, err := resolveServiceContext(rollbackService)
+		if err != nil {
 			return err
-		}
-
-		cfg, _ := config.LoadProjectConfig()
-		if cfg == nil || cfg.EnvironmentID == "" || cfg.ServiceID == "" {
-			return fmt.Errorf("project config missing environmentId or serviceId — run 'upuai link' to reconfigure")
 		}
 
 		client := api.NewClient()
 
 		if rollbackListFlag {
-			return listDeployments(client, cfg.EnvironmentID, cfg.ServiceID)
+			return listDeployments(client, envID, serviceID)
 		}
 
 		deployID := rollbackToFlag
@@ -48,7 +44,7 @@ Without flags, rolls back to the previous deployment.`,
 			var deployments []api.Deployment
 			err := ui.RunWithSpinner("Loading deployments...", func() error {
 				var listErr error
-				deployments, listErr = client.ListDeployments(cfg.EnvironmentID, cfg.ServiceID)
+				deployments, listErr = client.ListDeployments(envID, serviceID)
 				return listErr
 			})
 			if err != nil {
@@ -77,7 +73,7 @@ Without flags, rolls back to the previous deployment.`,
 		}
 
 		var deployment *api.Deployment
-		err := ui.RunWithSpinner("Rolling back...", func() error {
+		err = ui.RunWithSpinner("Rolling back...", func() error {
 			var rollbackErr error
 			deployment, rollbackErr = client.Rollback(deployID)
 			return rollbackErr
@@ -150,5 +146,6 @@ func listDeployments(client *api.Client, envID, serviceID string) error {
 func init() {
 	rollbackCmd.Flags().BoolVar(&rollbackListFlag, "list", false, "List recent deployments")
 	rollbackCmd.Flags().StringVar(&rollbackToFlag, "to", "", "Rollback to specific deployment ID")
+	rollbackCmd.Flags().StringVarP(&rollbackService, "service", "s", "", "Service name, slug, or ID (overrides linked service)")
 	rootCmd.AddCommand(rollbackCmd)
 }

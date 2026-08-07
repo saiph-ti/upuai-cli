@@ -111,13 +111,32 @@ func requireAuth() error {
 	return nil
 }
 
+// targetProject memoiza a resolução do projeto alvo dentro do processo. Um único
+// comando chega aqui mais de uma vez (`resolveServiceContext` chama
+// requireProject, e o comando já pode ter chamado antes), e sem isso um
+// `upuai redeploy -p api-prod -s web` fazia dois ListProjects idênticos.
+var (
+	targetProjectDone bool
+	targetProjectID   string
+	targetProjectErr  error
+)
+
 func requireProject() (string, error) {
+	if !targetProjectDone {
+		targetProjectDone = true
+		targetProjectID, targetProjectErr = resolveTargetProject()
+	}
+	return targetProjectID, targetProjectErr
+}
+
+func resolveTargetProject() (string, error) {
 	ref := getProjectID()
 	if ref == "" {
 		return "", errNoProject
 	}
 	// Alinha a sessão ao workspace do diretório ANTES de qualquer chamada — as
 	// listagens abaixo (e o comando que chamou) só enxergam o workspace ativo.
+	// Vira no-op quando -p nomeia outro projeto: aí o diretório não é o alvo.
 	if err := ensureLinkedWorkspace(); err != nil {
 		return "", err
 	}
@@ -169,6 +188,11 @@ func containsProject(projects []api.Project, id string) bool {
 // inexistente, um ID de projeto de terceiros, ou a API está fora). Nunca
 // troca de workspace: -p é ad-hoc, e mudar a sessão inteira por causa de uma
 // flag deixaria o usuário em outro workspace depois do comando.
+//
+// O conselho só é acionável porque o preflight cede a -p (ver
+// ensureLinkedWorkspace): a troca que ele pede sobrevive ao comando seguinte.
+// Enquanto o pin do diretório era aplicado mesmo com -p, esta mensagem mandava
+// o usuário para um ciclo — trocava, e a próxima invocação desfazia.
 func crossWorkspaceHint(client *api.Client, ref string) error {
 	resolved, err := client.ResolveProjectWorkspace(ref)
 	if err != nil {
@@ -216,8 +240,21 @@ func matchProjectRef(projects []api.Project, ref string) (string, error) {
 
 func requireServiceConfig() (string, string, error) {
 	cfg, _ := config.LoadProjectConfig()
-	if cfg == nil || cfg.EnvironmentID == "" || cfg.ServiceID == "" {
+	if cfg == nil || cfg.ProjectID == "" {
+		return "", "", errNoProject
+	}
+	if cfg.EnvironmentID == "" || cfg.ServiceID == "" {
 		return "", "", errNoServiceConfig
+	}
+	// O environmentId/serviceId gravados descrevem o projeto DESTE diretório. Com
+	// -p apontando outro, reusá-los faria o comando agir num alvo que ninguém
+	// nomeou — e em `down`, `domain delete` e `scale` isso é destrutivo. Recusar
+	// é a única resposta correta: o -p já foi validado, então agir no serviço
+	// linkado seria validar um projeto e mexer em outro.
+	if commandAnchor(cfg) == anchorFlag {
+		return "", "", fmt.Errorf("-p %q targets a different project than this directory (%q) — "+
+			"pass -s <service> to pick a service inside it, or run from that project's directory",
+			flagProject, linkedProjectLabel(cfg))
 	}
 	// Segundo funil do preflight de workspace. `ssh`, `run`, `shell`, `ps`,
 	// `config`, `scheduler` e `variables shared` operam no serviço linkado sem
@@ -228,6 +265,38 @@ func requireServiceConfig() (string, string, error) {
 		return "", "", err
 	}
 	return cfg.EnvironmentID, cfg.ServiceID, nil
+}
+
+// linkedServiceForTarget devolve o serviceId gravado no diretório quando ele
+// descreve o alvo do comando, e "" quando -p nomeia outro projeto.
+//
+// Para os comandos em que o serviço é OPCIONAL (`deploy` sem -s deploya o
+// projeto inteiro), devolver vazio é a degradação certa: some o serviço, não o
+// comando. Onde o serviço é obrigatório, quem recusa é requireServiceConfig.
+func linkedServiceForTarget() string {
+	cfg, _ := config.LoadProjectConfig()
+	if cfg == nil || commandAnchor(cfg) == anchorFlag {
+		return ""
+	}
+	return cfg.ServiceID
+}
+
+// shouldLinkNewService diz se um serviço recém-criado deve virar o serviço
+// linkado do diretório: só quando o diretório é o alvo do comando e ainda não
+// tem um. Com -p nomeando outro projeto, gravar aqui repontaria este diretório
+// para um serviço que não é dele.
+func shouldLinkNewService(cfg *config.ProjectConfig) bool {
+	return cfg != nil && cfg.ServiceID == "" && commandAnchor(cfg) == anchorDirectory
+}
+
+// linkedProjectLabel identifica o projeto do diretório para o usuário. Nome
+// quando existe (é o que ele reconhece), ID como fallback — um config gravado
+// por uma versão antiga pode não ter o nome.
+func linkedProjectLabel(cfg *config.ProjectConfig) string {
+	if cfg.ProjectName != "" {
+		return cfg.ProjectName
+	}
+	return cfg.ProjectID
 }
 
 // resolveServiceContext returns (envID, serviceID) for the current command.
@@ -272,8 +341,11 @@ func resolveServiceContext(serviceRef string) (envID, serviceID string, err erro
 func resolveEnvironmentID(client *api.Client, projectID string) (string, error) {
 	cfg, _ := config.LoadProjectConfig()
 
-	// Linked envID wins when no -e was passed.
-	if flagEnvironment == "" && cfg != nil && cfg.EnvironmentID != "" {
+	// Linked envID wins when no -e was passed — mas só para o projeto que o
+	// gravou. Ambiente é filho de projeto: reusar o ID do diretório para um
+	// projeto nomeado por -p montava um par impossível (serviço de um projeto,
+	// ambiente de outro) que a API só recusa lá na ponta, como 404 mudo.
+	if flagEnvironment == "" && cfg != nil && cfg.EnvironmentID != "" && cfg.ProjectID == projectID {
 		return cfg.EnvironmentID, nil
 	}
 

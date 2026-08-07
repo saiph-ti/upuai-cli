@@ -7,7 +7,6 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/upuai-cloud/cli/internal/api"
-	"github.com/upuai-cloud/cli/internal/config"
 	"github.com/upuai-cloud/cli/internal/ui"
 	"github.com/upuai-cloud/cli/internal/watcher"
 )
@@ -16,6 +15,7 @@ var (
 	deployWatchFlag       bool
 	deployWaitFlag        bool
 	deployWaitTimeoutFlag int
+	deployService         string
 )
 
 // terminalDeployStatuses mirrors the DeploymentStatus enum in
@@ -63,10 +63,17 @@ Use --watch for auto-redeploy on local file changes.`,
 
 		env := getEnvironment()
 
-		cfg, _ := config.LoadProjectConfig()
-		serviceID := ""
-		if cfg != nil {
-			serviceID = cfg.ServiceID
+		// O serviço é opcional aqui: sem ele a API deploya o projeto. Por isso o
+		// do diretório só entra quando o diretório É o alvo — com -p nomeando
+		// outro projeto, mandar este serviceId montava um par projeto/serviço
+		// cruzado, deployando o serviço errado sob o projeto certo.
+		serviceID := linkedServiceForTarget()
+		if deployService != "" {
+			_, resolved, resolveErr := resolveServiceContext(deployService)
+			if resolveErr != nil {
+				return resolveErr
+			}
+			serviceID = resolved
 		}
 
 		if err := runDeploy(projectID, env, serviceID); err != nil {
@@ -220,5 +227,6 @@ func init() {
 	deployCmd.Flags().BoolVarP(&deployWatchFlag, "watch", "w", false, "Watch for changes and auto-redeploy")
 	deployCmd.Flags().BoolVar(&deployWaitFlag, "wait", false, "Block until the deployment reaches a terminal status (success, failed, cancelled, build_failed, superseded). Exits non-zero on failure.")
 	deployCmd.Flags().IntVar(&deployWaitTimeoutFlag, "wait-timeout", 300, "Maximum seconds to wait when --wait is set (default 300)")
+	deployCmd.Flags().StringVarP(&deployService, "service", "s", "", "Service name, slug, or ID (overrides linked service)")
 	rootCmd.AddCommand(deployCmd)
 }

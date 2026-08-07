@@ -14,6 +14,7 @@ import (
 var (
 	upWaitFlag        bool
 	upWaitTimeoutFlag int
+	upService         string
 )
 
 var upCmd = &cobra.Command{
@@ -39,7 +40,7 @@ quando genuinamente não há git.`,
 		if err != nil {
 			return err
 		}
-		envID, serviceID, err := requireServiceConfig()
+		envID, serviceID, err := resolveServiceContext(upService)
 		if err != nil {
 			return err
 		}
@@ -163,5 +164,6 @@ func humanSize(n int64) string {
 func init() {
 	upCmd.Flags().BoolVar(&upWaitFlag, "wait", false, "Block until the deployment reaches a terminal status. Exits non-zero on failure.")
 	upCmd.Flags().IntVar(&upWaitTimeoutFlag, "wait-timeout", 300, "Maximum seconds to wait when --wait is set (default 300)")
+	upCmd.Flags().StringVarP(&upService, "service", "s", "", "Service name, slug, or ID (overrides linked service)")
 	rootCmd.AddCommand(upCmd)
 }

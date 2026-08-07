@@ -5,7 +5,6 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/upuai-cloud/cli/internal/api"
-	"github.com/upuai-cloud/cli/internal/config"
 	"github.com/upuai-cloud/cli/internal/git"
 	"github.com/upuai-cloud/cli/internal/ui"
 )
@@ -18,6 +17,7 @@ var (
 	flagConfigHealthCheck        string
 	flagConfigHealthCheckTimeout int
 	flagConfigRootDir            string
+	configService                string
 )
 
 var configSetCmd = &cobra.Command{
@@ -39,9 +39,14 @@ Examples:
 			return err
 		}
 
-		cfg, _ := config.LoadProjectConfig()
-		if cfg == nil || cfg.EnvironmentID == "" || cfg.ServiceID == "" {
-			return errNoServiceConfig
+		// Via resolveServiceContext, nunca lendo o .upuai/config.json direto: era o
+		// único comando de serviço fora dos dois funis de contexto, então escapava
+		// tanto do preflight de workspace (404 mudo em diretório de outro
+		// workspace) quanto da guarda de alvo (-p apontando outro projeto
+		// reconfigurava o serviço deste, em silêncio).
+		envID, serviceID, err := resolveServiceContext(configService)
+		if err != nil {
+			return err
 		}
 
 		// Build the update request from provided flags
@@ -74,8 +79,8 @@ Examples:
 
 		client := api.NewClient()
 
-		err := ui.RunWithSpinner("Updating configuration...", func() error {
-			return client.UpdateInstance(cfg.EnvironmentID, cfg.ServiceID, req)
+		err = ui.RunWithSpinner("Updating configuration...", func() error {
+			return client.UpdateInstance(envID, serviceID, req)
 		})
 		if err != nil {
 			return fmt.Errorf("failed to update config: %w", err)
@@ -107,7 +112,7 @@ health check, and root directory — useful to confirm what 'config set' applied
 			return err
 		}
 
-		envID, serviceID, err := requireServiceConfig()
+		envID, serviceID, err := resolveServiceContext(configService)
 		if err != nil {
 			return err
 		}
@@ -190,6 +195,7 @@ func init() {
 	configSetCmd.Flags().StringVar(&flagConfigStartCommand, "start-command", "", "Command to start the service")
 	configSetCmd.Flags().StringVar(&flagConfigHealthCheck, "health-check", "", "HTTP path for health check (e.g. /health)")
 	configSetCmd.Flags().IntVar(&flagConfigHealthCheckTimeout, "health-check-timeout", 0, "Seconds the app may take to answer the health check before the deploy fails (default 300)")
+	configCmd.PersistentFlags().StringVarP(&configService, "service", "s", "", "Service name, slug, or ID (overrides linked service)")
 	configCmd.AddCommand(configSetCmd)
 	configCmd.AddCommand(configShowCmd)
 	rootCmd.AddCommand(configCmd)

@@ -2,11 +2,56 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/upuai-cloud/cli/internal/api"
 	"github.com/upuai-cloud/cli/internal/config"
 	"github.com/upuai-cloud/cli/internal/ui"
 )
+
+// targetAnchor diz de ONDE veio o alvo do comando. É a resposta única para as
+// duas perguntas que antes cada helper respondia por conta própria: quem manda
+// no workspace da sessão, e se o `environmentId`/`serviceId` do diretório
+// descrevem o alvo.
+type targetAnchor int
+
+const (
+	// anchorDirectory: o projeto linkado É o alvo. O pin do diretório manda, e
+	// o contexto de serviço gravado nele é válido.
+	anchorDirectory targetAnchor = iota
+	// anchorFlag: -p nomeou OUTRO projeto. Nada do diretório se aplica.
+	anchorFlag
+)
+
+// decideTargetAnchor resolve o anchor a partir do -p e do projeto linkado.
+//
+// Pura e sem rede de propósito: roda no caminho quente de todo comando de
+// projeto, antes de qualquer chamada à API.
+//
+// O ref é comparado com o ID E com o nome do projeto linkado porque -p aceita
+// os dois. `upuai redeploy -p upuai` de dentro do diretório do `upuai` nomeia o
+// mesmo alvo que `upuai redeploy` — tratá-lo como flag desligaria o alinhamento
+// de workspace sem que nada tivesse mudado de alvo.
+func decideTargetAnchor(flagRef, linkedID, linkedName string) targetAnchor {
+	if flagRef == "" {
+		return anchorDirectory
+	}
+	if linkedID != "" && flagRef == linkedID {
+		return anchorDirectory
+	}
+	if linkedName != "" && strings.EqualFold(flagRef, linkedName) {
+		return anchorDirectory
+	}
+	return anchorFlag
+}
+
+// commandAnchor aplica decideTargetAnchor ao diretório atual.
+func commandAnchor(cfg *config.ProjectConfig) targetAnchor {
+	if cfg == nil {
+		return decideTargetAnchor(flagProject, "", "")
+	}
+	return decideTargetAnchor(flagProject, cfg.ProjectID, cfg.ProjectName)
+}
 
 // workspacePinAction é o que o preflight deve fazer para alinhar a sessão ao
 // workspace do diretório linkado.
@@ -63,10 +108,17 @@ var workspacePinChecked bool
 // "não existe", porque o filtro de acesso da API é fail-closed por design. O
 // usuário não tem como saber que o problema é workspace.
 //
-// O alinhamento é sempre com o DIRETÓRIO, nunca com -p: o pin é uma propriedade
-// do diretório de trabalho, então o efeito é previsível e estável entre comandos.
-// Trocar a sessão global por causa de uma flag ad-hoc deixaria o usuário em outro
+// O alinhamento nunca é COM -p: o pin é uma propriedade do diretório de
+// trabalho, então o efeito é previsível e estável entre comandos. Trocar a
+// sessão global por causa de uma flag ad-hoc deixaria o usuário em outro
 // workspace depois que o comando terminasse.
+//
+// Mas também não é CONTRA -p. Quando a flag nomeia outro projeto, o diretório
+// deixa de ser o alvo e o pin dele não tem autoridade nenhuma sobre a sessão —
+// aplicá-lo assim mesmo criava um ciclo fechado: o comando errava, sugeria
+// `upuai workspace switch <ws>`, e a invocação seguinte desfazia a troca antes
+// de tentar de novo. Conselho impossível de seguir de dentro de qualquer
+// diretório linkado, que é justamente de onde -p é usado.
 func ensureLinkedWorkspace() error {
 	if workspacePinChecked {
 		return nil
@@ -75,6 +127,9 @@ func ensureLinkedWorkspace() error {
 
 	cfg, _ := config.LoadProjectConfig()
 	if cfg == nil || cfg.ProjectID == "" {
+		return nil
+	}
+	if commandAnchor(cfg) == anchorFlag {
 		return nil
 	}
 

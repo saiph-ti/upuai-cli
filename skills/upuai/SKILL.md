@@ -80,6 +80,8 @@ A project on Upuai owns one or more **services**. Each service has a **type** th
 
 `upuai deploy` triggers a build + rollout for the **linked service**. An `empty` service cannot be deployed — attach a source first (re-init with `--repo`, or `upuai add --type github`, or use the dashboard).
 
+Every service-scoped command takes `-s/--service <name|slug|id>` to target another service — `deploy`, `up`, `redeploy`, `rollback`, `restart`, `scale`, `down`, `domain`, `config`, `logs`, `ps`, `variables`, `scheduler`, `run`, `shell`, `ssh`, `db`. Combine with `-p` for another project: `upuai redeploy -p api-prod -s web`.
+
 ### Happy path — single-service repo
 
 This is two commands. Confirm with the user before running each — `--name`, `--repo`, and `--framework` should reflect the user's intent.
@@ -289,9 +291,12 @@ upuai workspace switch               # interactive picker (needs a TTY)
 
 **Linked directories pin their workspace.** `upuai init` / `upuai link` record it in `.upuai/config.json`, and any command that resolves the linked project or service realigns the session before calling the API — so entering a project of another workspace just works. The switch is announced on **stderr** (`→ workspace: TAI Tecnologia (was Gabriel Braga)`), never stdout, so `-o json` stays pipeable.
 
+**The realignment follows the target, not the directory.** With `-p` naming another project, the directory stops being the target: its workspace pin does not move the session, and its `environmentId`/`serviceId` are not reused. So after the error below, `workspace switch` sticks and the retry works — the pin no longer cancels it out.
+
 Cross-workspace by ID:
 - `upuai link <project-id>` of another workspace **switches and links** — adopting the workspace is what linking means.
-- `-p <project-id>` of another workspace does **not** switch (a per-command flag must not move the whole session); it errors telling you which workspace owns the project.
+- `-p <project-id>` of another workspace does **not** switch (a per-command flag must not move the whole session); it errors telling you which workspace owns the project. Run the `workspace switch` it suggests, then repeat the command with the same `-p`.
+- `-p <project-id>` on a command that needs a service, without `-s`, is **refused** — the linked service belongs to this directory's project, so applying it there would act on a target you did not name. Pass `-s <service>`.
 
 Switching rotates the session tokens and is durable: the server pins the workspace to the refresh-token line, so it survives token rotation and later commands.
 

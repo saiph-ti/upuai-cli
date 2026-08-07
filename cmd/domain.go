@@ -8,6 +8,8 @@ import (
 	"github.com/upuai-cloud/cli/internal/ui"
 )
 
+var domainService string
+
 var domainCmd = &cobra.Command{
 	Use:     "domain",
 	Aliases: []string{"domains"},
@@ -16,6 +18,7 @@ var domainCmd = &cobra.Command{
 
 Examples:
   upuai domain list
+  upuai domain list -s worker-api
   upuai domain add my-app.example.com
   upuai domain delete <domain-id>`,
 }
@@ -28,11 +31,7 @@ var domainListCmd = &cobra.Command{
 			return err
 		}
 
-		if _, err := requireProject(); err != nil {
-			return err
-		}
-
-		envID, serviceID, err := requireServiceConfig()
+		envID, serviceID, err := resolveServiceContext(domainService)
 		if err != nil {
 			return err
 		}
@@ -90,11 +89,7 @@ var domainAddCmd = &cobra.Command{
 			return err
 		}
 
-		if _, err := requireProject(); err != nil {
-			return err
-		}
-
-		envID, serviceID, err := requireServiceConfig()
+		envID, serviceID, err := resolveServiceContext(domainService)
 		if err != nil {
 			return err
 		}
@@ -185,11 +180,7 @@ var domainGenerateCmd = &cobra.Command{
 			return err
 		}
 
-		if _, err := requireProject(); err != nil {
-			return err
-		}
-
-		envID, serviceID, err := requireServiceConfig()
+		envID, serviceID, err := resolveServiceContext(domainService)
 		if err != nil {
 			return err
 		}
@@ -234,11 +225,7 @@ var domainDeleteCmd = &cobra.Command{
 			return err
 		}
 
-		if _, err := requireProject(); err != nil {
-			return err
-		}
-
-		envID, serviceID, err := requireServiceConfig()
+		envID, serviceID, err := resolveServiceContext(domainService)
 		if err != nil {
 			return err
 		}
@@ -272,6 +259,7 @@ var domainDeleteCmd = &cobra.Command{
 
 func init() {
 	domainGenerateCmd.Flags().IntVar(&flagDomainPort, "port", 3000, "Target port the service listens on")
+	domainCmd.PersistentFlags().StringVarP(&domainService, "service", "s", "", "Service name, slug, or ID (overrides linked service)")
 	domainCmd.AddCommand(domainListCmd)
 	domainCmd.AddCommand(domainAddCmd)
 	domainCmd.AddCommand(domainGenerateCmd)

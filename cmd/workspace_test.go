@@ -128,27 +128,47 @@ func TestWorthAskingAboutWorkspace(t *testing.T) {
 // existe pra evitar. O teste é estrutural porque a alternativa (exercitar os 7
 // comandos) exigiria rede: aqui basta garantir que os dois funis chamam.
 func TestWorkspacePreflightCoversBothContextFunnels(t *testing.T) {
-	src, err := os.ReadFile("root.go")
-	if err != nil {
-		t.Fatalf("read root.go: %v", err)
-	}
-
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "root.go", src, 0)
-	if err != nil {
-		t.Fatalf("parse root.go: %v", err)
-	}
+	file := parseCmdFile(t, "root.go")
 
 	for _, funnel := range []string{"requireProject", "requireServiceConfig"} {
-		fn := findFuncDecl(file, funnel)
-		if fn == nil {
+		if findFuncDecl(file, funnel) == nil {
 			t.Fatalf("%s() não existe mais em root.go — se foi renomeado, atualize este invariante", funnel)
 		}
-		if !callsFunc(fn, "ensureLinkedWorkspace") {
-			t.Fatalf("%s() não chama ensureLinkedWorkspace() — comandos que passam por esse funil "+
+		if !reachesFunc(file, funnel, "ensureLinkedWorkspace", map[string]bool{}) {
+			t.Fatalf("%s() não alcança ensureLinkedWorkspace() — comandos que passam por esse funil "+
 				"vão operar no workspace errado e receber 404 indistinguível de \"não existe\"", funnel)
 		}
 	}
+}
+
+// TestPreflightConsultsTheAnchor é o segundo braço do invariante, e trava o fix
+// do ciclo de workspace: o preflight só pode aplicar o pin do diretório depois
+// de conferir que o diretório É o alvo. Sem essa consulta, `-p` de outro
+// workspace volta a ser insatisfazível — o comando sugere `workspace switch` e
+// a invocação seguinte desfaz a troca antes de tentar de novo.
+//
+// Estrutural porque o comportamento já tem teste próprio
+// (TestEnsureLinkedWorkspaceYieldsToProjectFlag); aqui o alvo é o acoplamento,
+// que sobrevive a reescritas do corpo.
+func TestPreflightConsultsTheAnchor(t *testing.T) {
+	file := parseCmdFile(t, "workspace_pin.go")
+	if !reachesFunc(file, "ensureLinkedWorkspace", "commandAnchor", map[string]bool{}) {
+		t.Fatal("ensureLinkedWorkspace() não consulta commandAnchor() — o pin do diretório " +
+			"voltaria a atropelar -p, refazendo o ciclo de troca de workspace")
+	}
+}
+
+func parseCmdFile(t *testing.T, name string) *ast.File {
+	t.Helper()
+	src, err := os.ReadFile(name)
+	if err != nil {
+		t.Fatalf("read %s: %v", name, err)
+	}
+	file, err := parser.ParseFile(token.NewFileSet(), name, src, 0)
+	if err != nil {
+		t.Fatalf("parse %s: %v", name, err)
+	}
+	return file
 }
 
 func findFuncDecl(file *ast.File, name string) *ast.FuncDecl {
@@ -161,7 +181,22 @@ func findFuncDecl(file *ast.File, name string) *ast.FuncDecl {
 	return nil
 }
 
-func callsFunc(fn *ast.FuncDecl, target string) bool {
+// reachesFunc diz se fnName alcança target — direto, ou através de outra função
+// declarada no mesmo arquivo. O passo transitivo é o que faz o invariante travar
+// a garantia em vez da forma: extrair um helper (requireProject →
+// resolveTargetProject) é refactor legítimo, e um teste que quebrasse aí
+// treinaria o próximo leitor a afrouxá-lo.
+func reachesFunc(file *ast.File, fnName, target string, seen map[string]bool) bool {
+	if seen[fnName] {
+		return false
+	}
+	seen[fnName] = true
+
+	fn := findFuncDecl(file, fnName)
+	if fn == nil {
+		return false
+	}
+
 	found := false
 	ast.Inspect(fn, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
@@ -169,7 +204,10 @@ func callsFunc(fn *ast.FuncDecl, target string) bool {
 			return true
 		}
 		ident, ok := call.Fun.(*ast.Ident)
-		if ok && ident.Name == target {
+		if !ok {
+			return true
+		}
+		if ident.Name == target || reachesFunc(file, ident.Name, target, seen) {
 			found = true
 			return false
 		}

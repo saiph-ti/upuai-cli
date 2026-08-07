@@ -195,7 +195,9 @@ See [Workspaces](#workspaces) for how linked directories pin their workspace.
 | `scheduler pause <name\|id>` / `resume` | `cron pause`/`resume` | Pause / resume the schedule |
 | `scheduler delete <name\|id>` | `cron delete` | Delete a scheduled job |
 
-`variables`, `scheduler`, `ps`, `logs`, `run`, `shell`, and `ssh` accept `-s/--service <name|slug|id>` to target a service other than the linked one (paridade com `railway variable list -s Postgres`).
+Every service-scoped command accepts `-s/--service <name|slug|id>` to target a service other than the linked one (paridade com `railway variable list -s Postgres`): `variables`, `scheduler`, `ps`, `logs`, `run`, `shell`, `ssh`, `config`, `db`, plus the ones that change state — `deploy`, `up`, `redeploy`, `rollback`, `restart`, `scale`, `down`, `domain`.
+
+Pair it with `-p` to act on another project entirely: `upuai redeploy -p api-prod -s web`. Without `-s`, a `-p` naming a project other than the linked directory's is **refused** rather than silently applied to the directory's service — see [Workspaces](#workspaces).
 
 > **`run`/`shell` vs `ssh`**: `run`/`shell` execute **locally** with the service's env vars injected (like `railway run`). `ssh` opens a session **inside the running production container** (like `railway ssh` / `fly ssh console`) — use it for `rails console`, `manage.py shell`, one-off maintenance, or debugging in the live pod.
 
@@ -242,7 +244,26 @@ The `→` line goes to **stderr**, so `upuai status -o json | jq` stays clean.
 
 A directory linked before this feature existed has no workspace recorded; the first command fills it in automatically, and the notice then reads just `→ workspace: TAI Tecnologia`.
 
-`upuai link <project-id>` also works across workspaces: if the ID belongs to another workspace you are a member of, the CLI switches to it and links — that switch *is* what linking means. Passing `-p <id>` of another workspace does **not** switch (a per-command flag should not move your whole session); it tells you which workspace the project lives in.
+**`-p` names the target, and the directory then steps aside.** The realignment above follows the *target* of the command, not the directory: with `-p` naming another project, the directory's pin has no authority over the session, and neither does its `environmentId`/`serviceId`. That is what makes the advice below possible to follow — while the pin was applied regardless, `switch` and the next command cancelled each other out forever.
+
+```
+$ upuai logs -p <id-de-outro-workspace> -s api
+✗ project "backend" belongs to workspace "TAI Tecnologia", not the active one
+  — run 'upuai workspace switch taitecnologia' first
+$ upuai workspace switch taitecnologia
+✓ Switched to workspace TAI Tecnologia
+$ upuai logs -p <id> -s api        # funciona; a troca sobrevive ao comando
+```
+
+`upuai link <project-id>` is the one exception that *does* switch on its own: if the ID belongs to another workspace you are a member of, the CLI moves and links — that switch *is* what linking means. `-p` never moves your session, because a per-command flag should not outlive the command.
+
+A command that needs a service but got `-p` for another project is refused, not guessed:
+
+```
+$ upuai down -p api-prod
+✗ -p "api-prod" targets a different project than this directory ("upuai")
+  — pass -s <service> to pick a service inside it, or run from that project's directory
+```
 
 Switching rotates your session tokens and the server pins the workspace to the refresh-token line, so it survives token rotation — you stay there until you switch again.
 

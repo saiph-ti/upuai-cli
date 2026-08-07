@@ -8,6 +8,8 @@ import (
 	"github.com/upuai-cloud/cli/internal/ui"
 )
 
+var downService string
+
 var downCmd = &cobra.Command{
 	Use:   "down",
 	Short: "Remove the latest deployment (stop service)",
@@ -16,11 +18,7 @@ var downCmd = &cobra.Command{
 			return err
 		}
 
-		if _, err := requireProject(); err != nil {
-			return err
-		}
-
-		envID, serviceID, err := requireServiceConfig()
+		envID, serviceID, err := resolveServiceContext(downService)
 		if err != nil {
 			return err
 		}
@@ -73,5 +71,6 @@ var downCmd = &cobra.Command{
 }
 
 func init() {
+	downCmd.Flags().StringVarP(&downService, "service", "s", "", "Service name, slug, or ID (overrides linked service)")
 	rootCmd.AddCommand(downCmd)
 }
