@@ -16,9 +16,12 @@ type InstanceBuildConfig struct {
 }
 
 type InstanceDeployConfig struct {
-	StartCommand       string `json:"startCommand,omitempty"`
-	HealthCheckPath    string `json:"healthCheckPath,omitempty"`
-	HealthCheckTimeout int    `json:"healthCheckTimeout,omitempty"`
+	StartCommand    string `json:"startCommand,omitempty"`
+	HealthCheckPath string `json:"healthCheckPath,omitempty"`
+	// Ponteiro porque `omitempty` num int descarta o zero, e aqui 0 é um valor
+	// com significado: "volte ao default da plataforma". Com int puro não havia
+	// como desfazer um ajuste — só substituí-lo por outro número.
+	HealthCheckTimeout *int `json:"healthCheckTimeout,omitempty"`
 }
 
 type UpdateInstanceRequest struct {

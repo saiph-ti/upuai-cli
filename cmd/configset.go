@@ -49,10 +49,15 @@ Examples:
 			return err
 		}
 
-		// Build the update request from provided flags
+		// Build the update request from provided flags.
+		//
+		// O timeout é lido por `Changed` e não por `> 0`: `--health-check-timeout 0`
+		// significa "volte ao default da plataforma", e comparar com zero tornava
+		// esse pedido indistinguível de não ter passado a flag.
+		timeoutChanged := cmd.Flags().Changed("health-check-timeout")
 		hasSource := flagConfigRootDir != ""
 		hasBuild := flagConfigBuilder != "" || flagConfigDockerfilePath != "" || flagConfigBuildCommand != ""
-		hasDeploy := flagConfigStartCommand != "" || flagConfigHealthCheck != "" || flagConfigHealthCheckTimeout > 0
+		hasDeploy := flagConfigStartCommand != "" || flagConfigHealthCheck != "" || timeoutChanged
 
 		if !hasSource && !hasBuild && !hasDeploy {
 			return fmt.Errorf("no configuration flags provided — use --builder, --build-command, --start-command, --health-check, or --root-dir")
@@ -71,9 +76,11 @@ Examples:
 		}
 		if hasDeploy {
 			req.Deploy = &api.InstanceDeployConfig{
-				StartCommand:       flagConfigStartCommand,
-				HealthCheckPath:    flagConfigHealthCheck,
-				HealthCheckTimeout: flagConfigHealthCheckTimeout,
+				StartCommand:    flagConfigStartCommand,
+				HealthCheckPath: flagConfigHealthCheck,
+			}
+			if timeoutChanged {
+				req.Deploy.HealthCheckTimeout = &flagConfigHealthCheckTimeout
 			}
 		}
 
@@ -146,6 +153,10 @@ health check, and root directory — useful to confirm what 'config set' applied
 		rootDir := "—"
 		startCommand := "—"
 		healthCheck := "—"
+		// O timeout era write-only na tabela: dava pra ajustar por `config set` e
+		// não havia como conferir o valor sem `--output json`. Quem ajustou um
+		// valor lia a mesma tela de antes e concluía que o comando não pegou.
+		healthCheckTimeout := "300s (default)"
 		if inst.Config != nil {
 			if b := inst.Config.Build; b != nil {
 				if b.Builder != "" {
@@ -168,6 +179,9 @@ health check, and root directory — useful to confirm what 'config set' applied
 				if d.HealthCheckPath != "" {
 					healthCheck = d.HealthCheckPath
 				}
+				if t := d.HealthCheckTimeout; t != nil && *t > 0 {
+					healthCheckTimeout = fmt.Sprintf("%ds", *t)
+				}
 			}
 		}
 
@@ -179,6 +193,7 @@ health check, and root directory — useful to confirm what 'config set' applied
 			"Root directory", rootDir,
 			"Start command", startCommand,
 			"Health check", healthCheck,
+			"Health check timeout", healthCheckTimeout,
 		)
 		fmt.Println()
 		ui.PrintInfo("Edit with: " + ui.Accent.Render("upuai config set --builder <railpack|dockerfile> ..."))
@@ -194,7 +209,7 @@ func init() {
 	configSetCmd.Flags().StringVar(&flagConfigBuildCommand, "build-command", "", "Command to build the service")
 	configSetCmd.Flags().StringVar(&flagConfigStartCommand, "start-command", "", "Command to start the service")
 	configSetCmd.Flags().StringVar(&flagConfigHealthCheck, "health-check", "", "HTTP path for health check (e.g. /health)")
-	configSetCmd.Flags().IntVar(&flagConfigHealthCheckTimeout, "health-check-timeout", 0, "Seconds the app may take to answer the health check before the deploy fails (default 300)")
+	configSetCmd.Flags().IntVar(&flagConfigHealthCheckTimeout, "health-check-timeout", 0, "Seconds the app may take to answer the health check before the deploy fails (default 300, max 600; pass 0 to restore the default)")
 	configCmd.PersistentFlags().StringVarP(&configService, "service", "s", "", "Service name, slug, or ID (overrides linked service)")
 	configCmd.AddCommand(configSetCmd)
 	configCmd.AddCommand(configShowCmd)

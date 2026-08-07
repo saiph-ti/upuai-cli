@@ -277,9 +277,13 @@ Examples:
 			}
 			if hasDeployConfig {
 				req.Deploy = &api.InstanceDeployConfig{
-					StartCommand:       flagAddStartCommand,
-					HealthCheckPath:    flagAddHealthCheck,
-					HealthCheckTimeout: flagAddHealthCheckTimeout,
+					StartCommand:    flagAddStartCommand,
+					HealthCheckPath: flagAddHealthCheck,
+				}
+				// Serviço nascendo agora: não existe valor anterior para
+				// resetar, então só enviamos o timeout quando ele foi pedido.
+				if flagAddHealthCheckTimeout > 0 {
+					req.Deploy.HealthCheckTimeout = &flagAddHealthCheckTimeout
 				}
 			}
 			err = ui.RunWithSpinner("Configuring service...", func() error {
@@ -434,7 +438,7 @@ func init() {
 	addCmd.Flags().StringVar(&flagAddDockerfilePath, "dockerfile-path", "", "Path to Dockerfile (used with --builder dockerfile)")
 	addCmd.Flags().StringVar(&flagAddStartCommand, "start-command", "", "Command to start the service")
 	addCmd.Flags().StringVar(&flagAddHealthCheck, "health-check", "", "HTTP path for health check (e.g. /health)")
-	addCmd.Flags().IntVar(&flagAddHealthCheckTimeout, "health-check-timeout", 0, "Seconds the app may take to answer the health check before the deploy fails (default 300)")
+	addCmd.Flags().IntVar(&flagAddHealthCheckTimeout, "health-check-timeout", 0, "Seconds the app may take to answer the health check before the deploy fails (default 300, max 600)")
 	addCmd.Flags().StringVar(&flagAddRegistryUser, "registry-user", "", "Usuário do registry privado (com --image, imagem privada)")
 	addCmd.Flags().StringVar(&flagAddRegistryPassword, "registry-password", "", "Senha/token do registry privado (armazenada como secret)")
 	addCmd.Flags().StringVar(&flagAddRegistryHost, "registry-host", "", "Host do registry (ex: ghcr.io); inferido da imagem se omitido")
