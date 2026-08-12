@@ -82,15 +82,21 @@ var statusCmd = &cobra.Command{
 	},
 }
 
+// Mirrors the web's status vocabulary (upuai-web apps/web/src/lib/deploy-status.ts):
+// green = healthy, red = broken, yellow = in flight, muted = at rest/unknown.
+// Every state the API can emit is listed — anything falling through to `default`
+// used to render muted grey, so a crashed service looked as calm as a stopped one.
 func formatServiceStatus(status string) string {
 	switch status {
-	case "running", "active", "healthy":
+	case "running", "active", "healthy", "success":
 		return ui.StatusRunning.Render("● " + status)
-	case "stopped", "failed", "error":
+	case "failed", "build_failed", "crashed", "error":
 		return ui.StatusStopped.Render("● " + status)
-	case "building", "deploying", "pending":
+	case "queued", "initializing", "building", "releasing", "deploying", "candidate_ready", "pending":
 		return ui.StatusBuilding.Render("● " + status)
 	default:
+		// At rest (stopped, cancelled, superseded) and anything unrecognized.
+		// `stopped` is deliberate — the platform scaled it to zero, it is not broken.
 		return ui.Muted.Render("● " + status)
 	}
 }
