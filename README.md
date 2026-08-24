@@ -151,7 +151,7 @@ See [Workspaces](#workspaces) for how linked directories pin their workspace.
 | `ssh` | Open an interactive shell (or run a command) **inside the running container** — `upuai ssh -s api -- bin/rails console`. Auto-allocates a PTY when stdin/stdout are terminals; in a pipe/redirect it runs non-interactively with byte-exact stdout/stderr (`echo x \| upuai ssh -- cat`). Force with `-t/--tty`, disable with `-T/--no-tty`. `--process <name>` targets one process of a multi-process service. Generic/stack-agnostic; backed by a K8s exec |
 | `config show` | Show the current build/deploy config of the linked service (builder, build/start commands, health check, root directory). Alias: `config get` |
 | `config set` | Update build/deploy config. `--root-dir apps/api` sets the build **Root Directory** for a monorepo on an existing github/gitlab service (no recreate needed); also `--builder`, `--dockerfile-path`, `--build-command`, `--start-command`, `--health-check` |
-| `service delete <name>` | Permanently delete **a single service** (and its deployments, volumes, bucket attachments, cluster workloads, domains) without touching the rest of the project. Irreversible; `-y` skips confirmation. Contrast with `upuai delete` (whole project) and `upuai down` (stop the deployment, keep the service) |
+| `service delete <name>` | Delete **a single service** (and its deployments, volumes, bucket attachments, cluster workloads, domains) without touching the rest of the project. Teardown runs in the background; the service is restorable for 30 days (volumes are not). `-y` skips confirmation. Contrast with `upuai delete` (whole project) and `upuai down` (stop the deployment, keep the service) |
 
 ### Database
 

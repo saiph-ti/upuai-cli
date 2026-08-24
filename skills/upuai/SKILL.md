@@ -195,7 +195,7 @@ upuai config set --root-dir apps/api  # set monorepo build Root Directory on an 
 upuai service delete <name> --yes   # delete ONE service (deployments+volumes+buckets+domains) — NOT the whole project
 ```
 
-`service delete` is the per-service counterpart to `upuai delete` (whole project) and `upuai down` (stop the deployment, keep the service). It resolves `<name>` by name/slug/id and is irreversible.
+`service delete` is the per-service counterpart to `upuai delete` (whole project) and `upuai down` (stop the deployment, keep the service). It resolves `<name>` by name/slug/id. The cluster teardown runs in the background — the command returns as soon as the request is accepted. The service can be restored from the project's deleted services for 30 days (variables, domains and build config come back); volumes are NOT restored, their disks are erased on delete.
 
 For database investigation see [Database](#database).
 

@@ -24,7 +24,14 @@ var serviceDeleteCmd = &cobra.Command{
 	Short: "Permanently delete a single service (keeps the project)",
 	Long: `Delete one service and all of its resources — deployments, volumes, bucket
 attachments, cluster workloads and domains — without touching the rest of the
-project. Irreversible.
+project.
+
+The cluster teardown runs in the background: the command returns as soon as the
+request is accepted and the service shows as "Deleting" until it finishes.
+
+The service can be restored from the project's deleted services for 30 days,
+which brings back variables, domains and build config. Volumes are NOT restored:
+their disks are erased on delete.
 
 This is the per-service counterpart to 'upuai delete' (whole project) and
 'upuai down' (stop the deployment but keep the service).
@@ -76,7 +83,7 @@ Examples:
 
 		if !flagYes {
 			ok, err := ui.Confirm(fmt.Sprintf(
-				"Delete service %q permanently? This removes its deployments, volumes, buckets and domains and cannot be undone.",
+				"Delete service %q? This removes its deployments, buckets and domains, and erases its volumes for good. The service itself can be restored for 30 days.",
 				target.Name,
 			))
 			if err != nil {
@@ -88,16 +95,16 @@ Examples:
 			}
 		}
 
-		err = ui.RunWithSpinner("Deleting service...", func() error {
+		err = ui.RunWithSpinner("Requesting deletion...", func() error {
 			return client.DeleteService(projectID, target.ID)
 		})
 		if err != nil {
-			// 409 = the orchestrator could not tear down cluster resources for at
-			// least one environment; the API intentionally keeps the service to
-			// avoid drift (no half-deleted state). Surface that clearly so the user
-			// retries rather than assuming a silent failure.
+			// 409 = the API refused the request up front: a bucket service whose
+			// MinIO bucket cannot be identified, or a database still referenced by
+			// other services (re-run with --force there). The cluster teardown
+			// itself runs on a queue and never answers this request.
 			if apiErr, ok := err.(*api.APIError); ok && apiErr.StatusCode == 409 {
-				return fmt.Errorf("service not deleted — cluster cleanup failed: %s\n  retry once the cluster is reachable", apiErr.Message)
+				return fmt.Errorf("deletion refused: %s", apiErr.Message)
 			}
 			return fmt.Errorf("failed to delete service: %w", err)
 		}
@@ -111,12 +118,20 @@ Examples:
 			})
 		}
 
+		// A exclusão é assíncrona desde 2026-08-24: a API aceita o pedido (202) e o
+		// teardown do cluster roda numa fila — num banco gerenciado ele leva
+		// minutos. Dizer "deleted" aqui seria mentira; o estado real aparece na
+		// interface (o serviço fica em "Excluindo") e em `upuai status`.
 		format := getOutputFormat()
 		if format == ui.FormatJSON {
-			ui.PrintJSON(map[string]interface{}{"deleted": true, "serviceId": target.ID, "name": target.Name})
+			ui.PrintJSON(map[string]interface{}{
+				"deletionRequested": true,
+				"serviceId":         target.ID,
+				"name":              target.Name,
+			})
 			return nil
 		}
-		ui.PrintSuccess(fmt.Sprintf("Service %s deleted", target.Name))
+		ui.PrintSuccess(fmt.Sprintf("Deletion of %s started — it keeps running in the background", target.Name))
 		return nil
 	},
 }
