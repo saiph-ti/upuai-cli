@@ -12,13 +12,35 @@ type Domain struct {
 	SslStatus string `json:"sslStatus,omitempty"` // pending | issuing | active | failed; vazio até a 1ª emissão
 	SslError  string `json:"sslError,omitempty"`  // última falha de emissão (failed, ou issuing em retry-backoff)
 	CreatedAt string `json:"createdAt"`
+	// RedirectTo: redirect de host canônico (este domínio → outro domínio do
+	// mesmo serviço, ex: www → apex). Presente só quando configurado.
+	RedirectTo *DomainRedirect `json:"redirectTo,omitempty"`
+}
+
+// DomainRedirect espelha DomainRedirectRef de apps/shared/src/types/domain-types.ts.
+type DomainRedirect struct {
+	DomainID string `json:"domainId"`
+	Hostname string `json:"hostname"`
+	Status   int    `json:"status"` // 301 | 302
 }
 
 // AddDomainRequest mirrors createDomainSchema on the API: the canonical field
 // is `hostname` (same as the web SPA's CreateDomainRequest). `targetPort` is
 // omitted on purpose — the API inherits it from the service's generated domain.
+// RedirectTo is a hostname of the same service (or the apex/www sibling the API
+// creates in the same request); RedirectStatus is 301 (default) or 302.
 type AddDomainRequest struct {
-	Hostname string `json:"hostname"`
+	Hostname       string `json:"hostname"`
+	RedirectTo     string `json:"redirectTo,omitempty"`
+	RedirectStatus int    `json:"redirectStatus,omitempty"`
+}
+
+// CreateDomainResponse é o que POST .../domains devolve: o domínio pedido e o
+// sibling do par apex/www que a API cria automaticamente (nil quando o hostname
+// não forma par — subdomínio que não é www, ou wildcard).
+type CreateDomainResponse struct {
+	Primary Domain  `json:"primary"`
+	Sibling *Domain `json:"sibling"`
 }
 
 func (c *Client) ListDomains(envID, serviceID string) ([]Domain, error) {
@@ -30,9 +52,21 @@ func (c *Client) ListDomains(envID, serviceID string) ([]Domain, error) {
 	return domains, nil
 }
 
-func (c *Client) AddDomain(envID, serviceID, domain string) (*Domain, error) {
+func (c *Client) AddDomain(envID, serviceID string, req AddDomainRequest) (*CreateDomainResponse, error) {
+	var result CreateDomainResponse
+	err := c.Post(fmt.Sprintf("/environments/%s/services/%s/domains", envID, serviceID), &req, &result)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// UpdateDomain faz PATCH parcial. body é um mapa (e não struct) porque
+// `"redirectTo": null` precisa viajar EXPLÍCITO para remover o redirect —
+// um campo omitempty nunca conseguiria dizer "apague".
+func (c *Client) UpdateDomain(envID, serviceID, domainID string, body map[string]any) (*Domain, error) {
 	var result Domain
-	err := c.Post(fmt.Sprintf("/environments/%s/services/%s/domains", envID, serviceID), &AddDomainRequest{Hostname: domain}, &result)
+	err := c.Patch(fmt.Sprintf("/environments/%s/services/%s/domains/%s", envID, serviceID, domainID), body, &result)
 	if err != nil {
 		return nil, err
 	}

@@ -220,9 +220,22 @@ startCommand = "node dist/server.js"
 releaseCommand = "pnpm exec prisma migrate deploy"
 releaseTimeoutSeconds = 300
 healthCheckPath = "/health"
+
+# Response headers and path redirects applied at the edge (Traefik), before the
+# app — works for static sites and server apps alike. The platform already sends
+# X-Content-Type-Options, X-Frame-Options and Referrer-Policy; add or override here.
+[http.headers]
+Strict-Transport-Security = "max-age=31536000"   # HSTS is opt-in (sticky in browsers; only add includeSubDomains if EVERY subdomain serves HTTPS)
+
+[[http.redirects]]
+from = "/precos"          # `:name` matches one path segment, `*` matches the rest
+to = "/planos"
+status = 301              # 301 (default) or 302
 ```
 
 Precedence: dashboard UI values win over `upuai.toml`, which wins over Procfile `release:` (legacy). Don't set the same key in two places.
+
+`[http]` applies to ALL hostnames of the service and `from` is always a path. A redirect between domains (www → apex, canonical host) is an attribute of the domain, not of the commit: `upuai domain update www.x.com --redirect-to x.com` — see Custom domains below.
 
 ### Environment variables
 
@@ -248,12 +261,17 @@ Vars take effect on the **next deploy** — trigger `upuai redeploy --yes` if th
 ### Custom domains
 
 ```bash
-upuai domains list -o json
-upuai domains add myapp.com --yes        # adds + returns DNS records to set
-upuai domains delete <domain-id> --yes
+upuai domains list -o json                                   # includes `redirectTo` when set
+upuai domains add myapp.com --yes                            # adds + returns DNS records to set (for BOTH sides of the apex/www pair)
+upuai domains add www.myapp.com --redirect-to myapp.com --status 301 --yes   # www is the domain you add; apex is created as its pair and www redirects to it
+upuai domains update www.myapp.com --redirect-to myapp.com   # set/change the canonical-host redirect (301 default, or --status 302)
+upuai domains update www.myapp.com --no-redirect             # www serves the app again
+upuai domains delete myapp.com --yes                         # hostname or id; deletes the apex/www pair together
 ```
 
-After `domains add`, instruct the user to set the DNS records (CNAME / A) returned by the API at their registrar. Propagation can take minutes to hours.
+Adding an apex (`myapp.com`) automatically adds `www.myapp.com` (and vice versa) — the pair counts as ONE domain of the plan quota. A pair created from now on already has the counterpart redirecting to the domain the user added (301, keeps path and query string). Pairs created before this existed serve the same content on both hosts: enable the redirect with `domains update <www> --redirect-to <apex>` (or the dashboard). Any domain of the service can redirect to any other one (e.g. the generated `*.apps.upuai.cloud` host → the custom domain); no chains, no wildcard as source. The redirect lives at the edge and needs no redeploy.
+
+After `domains add`, instruct the user to set the DNS records (CNAME / A) returned by the API at their registrar — both hosts of the pair need records. Propagation can take minutes to hours. Note: `curl -I` (HEAD) shows `308` for permanent redirects; a GET (what browsers and search engines do) gets `301`.
 
 ### Scaling
 

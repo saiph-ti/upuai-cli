@@ -181,9 +181,10 @@ See [Workspaces](#workspaces) for how linked directories pin their workspace.
 | `variables shared list` | `vars shared list` | **Per service**: list which shared (project/environment) variables are injected (`Enabled`/`Origin`) |
 | `variables shared enable KEY...` | `vars shared enable` | Inject shared variable(s) into this service. `--origin project\|environment` disambiguates a key defined in both layers |
 | `variables shared disable KEY...` | `vars shared disable` | Stop injecting shared variable(s) into this service |
-| `domain list` | `domains list` | List custom domains |
-| `domain add <domain>` | `domains add` | Add a custom domain |
-| `domain delete <domain-id>` | `domains delete` | Delete a custom domain |
+| `domain list` | `domains list` | List custom domains (with their redirect, if any) |
+| `domain add <domain>` | `domains add` | Add a custom domain (its apex/www counterpart is added too). `--redirect-to <domain> --status 301\|302` to make it redirect |
+| `domain update <domain\|id>` | `domains update` | Set (`--redirect-to <domain> [--status 301\|302]`) or remove (`--no-redirect`) the canonical-host redirect of a domain |
+| `domain delete <domain\|id>` | `domains delete` | Delete a custom domain (and its apex/www counterpart) |
 
 ### Scheduler (cron)
 
