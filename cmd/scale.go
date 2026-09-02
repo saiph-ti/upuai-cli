@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -86,6 +87,12 @@ func scaleWhole(client *api.Client, envID, serviceID string, count int) error {
 		return client.ScaleInstance(envID, serviceID, "", count)
 	})
 	if err != nil {
+		// Serviço multi-processo: a API recusa um scale sem alvo (PROCESS_REQUIRED)
+		// e lista os processos na mensagem. Diz ao usuário a forma certa.
+		var apiErr *api.APIError
+		if errors.As(err, &apiErr) && apiErr.Code == "PROCESS_REQUIRED" {
+			return fmt.Errorf("%s\nThis service runs multiple processes — scale one at a time with `upuai scale <process>=<count>` (list them with `upuai ps`)", apiErr.Message)
+		}
 		return fmt.Errorf("scale failed: %w", err)
 	}
 	ui.PrintSuccess(fmt.Sprintf("Scaled to %d replica(s)", count))
