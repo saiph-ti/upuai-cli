@@ -42,9 +42,10 @@ Examples:
 
 		// Legacy form: a single bare integer scales the whole service.
 		if len(args) == 1 {
-			if count, convErr := strconv.Atoi(args[0]); convErr == nil {
-				if count < 0 {
-					return fmt.Errorf("invalid replica count %q — must be a non-negative integer", args[0])
+			if _, convErr := strconv.Atoi(args[0]); convErr == nil {
+				count, err := parseReplicaCount(args[0])
+				if err != nil {
+					return err
 				}
 				return scaleWhole(client, envID, serviceID, count)
 			}
@@ -61,9 +62,9 @@ Examples:
 			if !ok || name == "" {
 				return fmt.Errorf("invalid argument %q — expected a bare integer (e.g. 3) or <process>=<count> (e.g. web=2)", arg)
 			}
-			count, convErr := strconv.Atoi(raw)
-			if convErr != nil || count < 0 {
-				return fmt.Errorf("invalid replica count %q for process %q — must be a non-negative integer", raw, name)
+			count, err := parseReplicaCount(raw)
+			if err != nil {
+				return fmt.Errorf("process %q: %w", name, err)
 			}
 			targets = append(targets, scaleTarget{name: name, count: count})
 		}
@@ -80,6 +81,20 @@ Examples:
 		}
 		return nil
 	},
+}
+
+// parseReplicaCount aceita só inteiros >= 1 — mesmo contrato da API
+// (scaleInstanceSchema). Um serviço sempre roda ao menos 1 réplica; o que não
+// deve rodar é excluído.
+func parseReplicaCount(raw string) (int, error) {
+	count, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("invalid replica count %q — must be an integer of at least 1", raw)
+	}
+	if count < 1 {
+		return 0, fmt.Errorf("invalid replica count %q — a service runs at least 1 replica; delete it with `upuai service delete <name>` if it should not run", raw)
+	}
+	return count, nil
 }
 
 func scaleWhole(client *api.Client, envID, serviceID string, count int) error {
