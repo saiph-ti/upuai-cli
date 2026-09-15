@@ -154,8 +154,8 @@ func (c *Client) tryRefreshToken() bool {
 	}
 
 	// Refresh token vai no CORPO do POST, não na query string — na URL ele
-	// vazaria em access log de proxy/Traefik. O endpoint /auth/refresh aceita
-	// body (preferido) e ainda cai pra query como fallback legado.
+	// vazaria em access log de proxy/Traefik. O /auth/refresh só aceita body
+	// (o fallback de query saiu da API em 2026-09-15).
 	url := c.baseURL + "/auth/refresh"
 	payload, err := json.Marshal(map[string]string{"refreshToken": creds.RefreshToken})
 	if err != nil {
