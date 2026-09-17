@@ -12,7 +12,7 @@ import (
 )
 
 // serviceTypeLabels are the user-facing names shown in the interactive picker.
-// serviceTypeValues are the corresponding API values (must match API enum).
+// serviceTypeAPIValues are the corresponding API values (must match API enum).
 var serviceTypeLabels = []string{"app", "bucket", "database", "docker", "docker image", "function", "github", "gitlab"}
 var serviceTypeAPIValues = map[string]string{
 	"app":          "empty",
@@ -23,6 +23,18 @@ var serviceTypeAPIValues = map[string]string{
 	"function":     "function",
 	"github":       "github",
 	"gitlab":       "gitlab",
+}
+
+// normalizeServiceType accepts both the picker label ("docker image") and the
+// API value ("docker_image", the spelling the docs and the API enum use), in
+// any case and with `_`/`-` as separators. Only the label used to be accepted,
+// so `--type docker_image` — copied straight from the docs — was refused.
+func normalizeServiceType(raw string) (string, bool) {
+	key := strings.ToLower(strings.TrimSpace(raw))
+	key = strings.NewReplacer("_", " ", "-", " ").Replace(key)
+	key = strings.Join(strings.Fields(key), " ")
+	value, ok := serviceTypeAPIValues[key]
+	return value, ok
 }
 
 // defaultBucketRegion mirrors the value the web UI sends today
@@ -93,10 +105,10 @@ Examples:
 		serviceType := "empty"
 		if serviceTypeLabel != "" {
 			var ok bool
-			serviceType, ok = serviceTypeAPIValues[serviceTypeLabel]
+			serviceType, ok = normalizeServiceType(serviceTypeLabel)
 			if !ok {
 				return fmt.Errorf(
-					"invalid service type %q\n  valid types: %v\n  if you expected %q to work, run 'upuai upgrade' — it was added in v0.4.0\n  docs: https://upuai.com.br/docs/upuai-cli",
+					"invalid service type %q\n  valid types: %v (docker_image also accepted)\n  if you expected %q to work, run 'upuai upgrade' — it was added in v0.4.0\n  docs: https://upuai.com.br/docs/upuai-cli",
 					serviceTypeLabel, serviceTypeLabels, serviceTypeLabel,
 				)
 			}
@@ -426,7 +438,7 @@ func pickDatabaseTemplate(templates []api.DatabaseTemplate, engine string) (*api
 }
 
 func init() {
-	addCmd.Flags().StringVar(&flagAddType, "type", "", "Service type: app, bucket, database, docker, docker image, function, github, gitlab")
+	addCmd.Flags().StringVar(&flagAddType, "type", "", "Service type: app, bucket, database, docker, docker_image, function, github, gitlab")
 	addCmd.Flags().BoolVar(&flagAddWorker, "worker", false, "Create a background worker (no HTTP/domain) — combine with --repo or --image")
 	addCmd.Flags().StringVar(&flagAddName, "name", "", "Service name (skips prompt)")
 	addCmd.Flags().StringVar(&flagAddEngine, "engine", "", "Managed database engine (postgres, redis, mysql, mongo) — used with --type database to skip the picker")
