@@ -16,7 +16,16 @@ var (
 	deployWaitFlag        bool
 	deployWaitTimeoutFlag int
 	deployService         string
+	deployImageFlag       string
 )
+
+// imageSourceTypes are the service types (as the API lists them) deployed from a
+// registry image. --image only applies to these: on a git or empty service it
+// would silently turn the service into an image service.
+var imageSourceTypes = map[string]struct{}{
+	"docker":       {},
+	"docker_image": {},
+}
 
 // terminalDeployStatuses mirrors the DeploymentStatus enum in
 // apps/shared/src/types/deployment-types.ts. Polling stops once status hits
@@ -40,7 +49,7 @@ var failedDeployStatuses = map[string]struct{}{
 
 var deployCmd = &cobra.Command{
 	Use:   "deploy",
-	Short: "Deploy the current project (git-connected source)",
+	Short: "Deploy the current project or a service",
 	Long: `Deploy the current project to Upuai Cloud.
 
 Triggers a new deployment for the linked project. By default the command
@@ -49,6 +58,14 @@ phase, and rollout continue asynchronously. Pass --wait to poll until the
 deployment reaches a terminal status (success, failed, cancelled,
 build_failed, or superseded). Exit code is non-zero on failed, cancelled,
 or build_failed.
+
+For a service deployed from a registry image, --image sets the image before
+deploying — the one-step update for CI:
+
+  upuai deploy -p my-project -s mailpit -e production --image axllent/mailpit:v1.25.0 --wait --yes
+
+Every deploy of an image service pulls the image again, so redeploying a
+mutable tag (e.g. latest) picks up whatever the tag points to at that moment.
 
 Use --watch for auto-redeploy on local file changes.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -63,17 +80,33 @@ Use --watch for auto-redeploy on local file changes.`,
 
 		env := getEnvironment()
 
-		// O serviço é opcional aqui: sem ele a API deploya o projeto. Por isso o
-		// do diretório só entra quando o diretório É o alvo — com -p nomeando
-		// outro projeto, mandar este serviceId montava um par projeto/serviço
-		// cruzado, deployando o serviço errado sob o projeto certo.
-		serviceID := linkedServiceForTarget()
-		if deployService != "" {
-			_, resolved, resolveErr := resolveServiceContext(deployService)
-			if resolveErr != nil {
-				return resolveErr
+		var serviceID string
+		if deployImageFlag != "" {
+			if deployWatchFlag {
+				return fmt.Errorf("--image cannot be combined with --watch: --watch redeploys on local file changes, and an image service has no local source")
 			}
-			serviceID = resolved
+			client := api.NewClient()
+			setErr := ui.RunWithSpinner("Setting image "+deployImageFlag+"...", func() error {
+				var imgErr error
+				serviceID, imgErr = setServiceImage(client, projectID, deployService, deployImageFlag)
+				return imgErr
+			})
+			if setErr != nil {
+				return setErr
+			}
+		} else {
+			// O serviço é opcional aqui: sem ele a API deploya o projeto. Por isso o
+			// do diretório só entra quando o diretório É o alvo — com -p nomeando
+			// outro projeto, mandar este serviceId montava um par projeto/serviço
+			// cruzado, deployando o serviço errado sob o projeto certo.
+			serviceID = linkedServiceForTarget()
+			if deployService != "" {
+				_, resolved, resolveErr := resolveServiceContext(deployService)
+				if resolveErr != nil {
+					return resolveErr
+				}
+				serviceID = resolved
+			}
 		}
 
 		if err := runDeploy(projectID, env, serviceID); err != nil {
@@ -86,6 +119,56 @@ Use --watch for auto-redeploy on local file changes.`,
 
 		return nil
 	},
+}
+
+// setServiceImage points an image service at ref and returns the service ID
+// for the deploy that follows. The environment comes from resolveEnvironmentID
+// — the same priority (-e, linked directory, default) that getEnvironment gives
+// the deploy — so the image never lands in one environment while the deploy
+// goes to another. The service is required: an image belongs to one service.
+// The API only records the change (pending); the deploy pulls and rolls it out.
+func setServiceImage(client *api.Client, projectID, serviceRef, ref string) (string, error) {
+	if err := validateImageRef(ref); err != nil {
+		return "", err
+	}
+	if serviceRef == "" {
+		serviceRef = linkedServiceForTarget()
+	}
+	if serviceRef == "" {
+		return "", fmt.Errorf("--image needs a service: pass -s <service> or run from a directory linked to one")
+	}
+	envID, err := resolveEnvironmentID(client, projectID)
+	if err != nil {
+		return "", err
+	}
+	services, err := client.ListServices(projectID)
+	if err != nil {
+		return "", fmt.Errorf("list services: %w", err)
+	}
+	svc, err := matchServiceRef(services, serviceRef)
+	if err != nil {
+		return "", err
+	}
+	if _, ok := imageSourceTypes[svc.Type]; !ok {
+		return "", fmt.Errorf("service %q is deployed from %s, not from an image — --image only updates image services (change its source in the dashboard)", svc.Name, svc.Type)
+	}
+	if err := client.SetImageSource(envID, svc.ID, ref); err != nil {
+		return "", fmt.Errorf("set image on %q: %w", svc.Name, err)
+	}
+	return svc.ID, nil
+}
+
+// validateImageRef catches the references a script builds wrong — an empty tag
+// or digest from a lookup that found nothing — before they become a pending
+// change and a failed deploy.
+func validateImageRef(ref string) error {
+	if ref == "" || strings.ContainsAny(ref, " \t\n") {
+		return fmt.Errorf("invalid image reference %q", ref)
+	}
+	if strings.HasSuffix(ref, ":") || strings.HasSuffix(ref, "@") {
+		return fmt.Errorf("invalid image reference %q: empty tag or digest", ref)
+	}
+	return nil
 }
 
 func runDeploy(projectID, env, serviceID string) error {
@@ -225,6 +308,7 @@ func runWatchMode(projectID, env, serviceID string) error {
 
 func init() {
 	deployCmd.Flags().BoolVarP(&deployWatchFlag, "watch", "w", false, "Watch for changes and auto-redeploy")
+	deployCmd.Flags().StringVar(&deployImageFlag, "image", "", "Set the image of an image service before deploying (e.g. nginx:1.27 or ghcr.io/org/app@sha256:...). Requires -s or a linked service")
 	deployCmd.Flags().BoolVar(&deployWaitFlag, "wait", false, "Block until the deployment reaches a terminal status (success, failed, cancelled, build_failed, superseded). Exits non-zero on failure.")
 	deployCmd.Flags().IntVar(&deployWaitTimeoutFlag, "wait-timeout", 300, "Maximum seconds to wait when --wait is set (default 300)")
 	deployCmd.Flags().StringVarP(&deployService, "service", "s", "", "Service name, slug, or ID (overrides linked service)")

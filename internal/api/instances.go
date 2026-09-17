@@ -30,10 +30,20 @@ type UpdateInstanceRequest struct {
 	Deploy *InstanceDeployConfig `json:"deploy,omitempty"`
 }
 
+// InstanceSourceInfo is the source as the API returns it. Separate from
+// InstanceSourceConfig (the PATCH …/instance body), which must never carry the
+// image or repository: those change only through PATCH …/source.
+type InstanceSourceInfo struct {
+	Image         string `json:"image,omitempty"`
+	Repo          string `json:"repo,omitempty"`
+	Branch        string `json:"branch,omitempty"`
+	RootDirectory string `json:"rootDirectory,omitempty"`
+}
+
 // InstanceConfig mirrors the `Service.config` shape returned by the API
 // (see apps/api: ServiceInstance.config — only fields the CLI surfaces).
 type InstanceConfig struct {
-	Source *InstanceSourceConfig `json:"source,omitempty"`
+	Source *InstanceSourceInfo   `json:"source,omitempty"`
 	Build  *InstanceBuildConfig  `json:"build,omitempty"`
 	Deploy *InstanceDeployConfig `json:"deploy,omitempty"`
 }
@@ -59,6 +69,20 @@ func (c *Client) GetInstance(envID, serviceID string) (*Instance, error) {
 
 func (c *Client) UpdateInstance(envID, serviceID string, req *UpdateInstanceRequest) error {
 	return c.Patch(fmt.Sprintf("/environments/%s/services/%s/instance", envID, serviceID), req, nil)
+}
+
+// UpdateImageSourceRequest is the image variant of PATCH …/source. The API
+// stores it in the instance config and marks a pending change; it does not
+// deploy.
+type UpdateImageSourceRequest struct {
+	Type  string `json:"type"`
+	Image string `json:"image"`
+}
+
+// SetImageSource points a service instance at an image reference.
+func (c *Client) SetImageSource(envID, serviceID, image string) error {
+	req := &UpdateImageSourceRequest{Type: "DOCKER", Image: image}
+	return c.Patch(fmt.Sprintf("/environments/%s/services/%s/source", envID, serviceID), req, nil)
 }
 
 // GetLogs fetches the most recent runtime log lines of a service instance. When

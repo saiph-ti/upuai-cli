@@ -112,8 +112,10 @@ var configShowCmd = &cobra.Command{
 	Short:   "Show current build/deploy configuration of the linked service",
 	Long: `Show the build/deploy configuration of the linked service instance.
 
-Reveals the current builder (railpack/dockerfile), build/start commands,
-health check, and root directory — useful to confirm what 'config set' applied.`,
+Reveals the source (image, or repository and branch), the current builder
+(railpack/dockerfile), build/start commands, health check, and root directory —
+useful to confirm what 'config set' or 'deploy --image' applied. With -o json the
+image is at .config.source.image.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := requireAuth(); err != nil {
 			return err
@@ -151,6 +153,7 @@ health check, and root directory — useful to confirm what 'config set' applied
 		dockerfilePath := "—"
 		buildCommand := "—"
 		rootDir := "—"
+		source := "—"
 		startCommand := "—"
 		healthCheck := "—"
 		// O timeout era write-only na tabela: dava pra ajustar por `config set` e
@@ -169,8 +172,18 @@ health check, and root directory — useful to confirm what 'config set' applied
 					buildCommand = b.BuildCommand
 				}
 			}
-			if s := inst.Config.Source; s != nil && s.RootDirectory != "" {
-				rootDir = s.RootDirectory
+			if s := inst.Config.Source; s != nil {
+				if s.RootDirectory != "" {
+					rootDir = s.RootDirectory
+				}
+				if s.Image != "" {
+					source = s.Image
+				} else if s.Repo != "" {
+					source = s.Repo
+					if s.Branch != "" {
+						source += "@" + s.Branch
+					}
+				}
 			}
 			if d := inst.Config.Deploy; d != nil {
 				if d.StartCommand != "" {
@@ -187,6 +200,7 @@ health check, and root directory — useful to confirm what 'config set' applied
 
 		fmt.Println()
 		ui.PrintKeyValue(
+			"Source", source,
 			"Builder", builder,
 			"Dockerfile path", dockerfilePath,
 			"Build command", buildCommand,

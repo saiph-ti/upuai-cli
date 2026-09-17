@@ -46,3 +46,33 @@ func (c *Client) ListTokens() ([]ApiToken, error) {
 func (c *Client) RevokeToken(id string) error {
 	return c.Delete("/tokens/" + id)
 }
+
+// TokenWorkspace and TokenProject identify where a machine token operates.
+type TokenWorkspace struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Slug string `json:"slug"`
+}
+
+type TokenProject struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// SelfToken is GET /tokens/self: the calling machine token, its workspace and
+// the project it is restricted to (nil when workspace-wide).
+type SelfToken struct {
+	ApiToken
+	Workspace TokenWorkspace `json:"workspace"`
+	Project   *TokenProject  `json:"project"`
+}
+
+// GetSelfToken describes the machine token of the current request. Only valid
+// with UPUAI_TOKEN; a user session gets 400.
+func (c *Client) GetSelfToken() (*SelfToken, error) {
+	var result SelfToken
+	if err := c.Get("/tokens/self", &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}

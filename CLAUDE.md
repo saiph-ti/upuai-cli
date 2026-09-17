@@ -10,7 +10,7 @@ cli/
 │   ├── root.go                # Root, flags globais, helpers (requireAuth, requireProject, requireServiceConfig, resolveServiceContext, resolveEnvironmentID, getEnvironment, getProjectID)
 │   ├── login.go               # OAuth GitHub + Email OTP
 │   ├── logout.go              # Limpa credentials
-│   ├── whoami.go              # Mostra usuário, workspace, projeto
+│   ├── whoami.go              # Mostra usuário, workspace, projeto — com UPUAI_TOKEN, o token (via GET /tokens/self)
 │   ├── workspace.go           # `workspace` (aliases: ws, workspaces) → list, current, switch + helpers activeWorkspace/switchWorkspace/matchWorkspaceRef
 │   ├── workspace_pin.go       # Preflight: alinha a sessão ao workspace do diretório linkado (decideWorkspacePin + ensureLinkedWorkspace)
 │   ├── init.go                # Cria projeto (detecta framework)
@@ -19,7 +19,7 @@ cli/
 │   ├── list.go                # Lista todos os projetos (alias: ls)
 │   ├── open.go                # Abre projeto no browser
 │   ├── delete.go              # Deleta projeto linkado
-│   ├── deploy.go              # Deploy do serviço linkado + watch mode (--watch/-w)
+│   ├── deploy.go              # Deploy do projeto/serviço + --wait, watch mode (--watch/-w) e --image (troca a imagem de serviço de imagem no mesmo ambiente do deploy)
 │   ├── up.go                  # Deploy a partir do source local (tar + upload) — NÃO é alias de deploy
 │   ├── redeploy.go            # Redeploy do último deployment
 │   ├── rollback.go            # Rollback de deployment
@@ -60,10 +60,11 @@ cli/
 │   │   ├── deployments.go     # Deploy, ListDeployments, GetDeployment, Rollback, Redeploy, RemoveDeployment
 │   │   ├── environments.go    # ListEnvironments, CreateEnvironment, DeleteEnvironment
 │   │   ├── services.go        # ListServices, CreateService
-│   │   ├── instances.go       # GetLogs, RestartInstance, ScaleInstance (todos com process opcional)
+│   │   ├── instances.go       # GetInstance, UpdateInstance, SetImageSource (PATCH …/source), GetLogs, RestartInstance, ScaleInstance (process opcional)
 │   │   ├── processes.go       # ListProcesses (multi-process service: web/worker/clock/release)
 │   │   ├── variables.go       # ListVariables, SetVariables, DeleteVariable
 │   │   ├── domains.go         # ListDomains, AddDomain, DeleteDomain
+│   │   ├── tokens.go          # CreateToken, ListTokens, RevokeToken, GetSelfToken (GET /tokens/self — identidade do UPUAI_TOKEN)
 │   │   ├── tenant.go          # ListWorkspaces, SwitchWorkspace, ResolveProjectWorkspace (a API modela como "tenant"; o resto do CLI só fala workspace)
 │   │   └── errors.go          # APIError (+ Code do catálogo) e helpers ErrorCode/StatusCode
 │   ├── auth/

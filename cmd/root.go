@@ -325,14 +325,23 @@ func resolveServiceContext(serviceRef string) (envID, serviceID string, err erro
 	if err != nil {
 		return "", "", fmt.Errorf("list services: %w", err)
 	}
+	svc, err := matchServiceRef(services, serviceRef)
+	if err != nil {
+		return "", "", err
+	}
+	return envID, svc.ID, nil
+}
+
+// matchServiceRef acha um serviço por ID, nome ou slug (case-insensitive).
+func matchServiceRef(services []api.AppService, serviceRef string) (api.AppService, error) {
 	for _, s := range services {
 		if s.ID == serviceRef ||
 			strings.EqualFold(s.Name, serviceRef) ||
 			strings.EqualFold(s.Slug, serviceRef) {
-			return envID, s.ID, nil
+			return s, nil
 		}
 	}
-	return "", "", fmt.Errorf("service %q not found in project — try 'upuai list' to see available services", serviceRef)
+	return api.AppService{}, fmt.Errorf("service %q not found in project — try 'upuai list' to see available services", serviceRef)
 }
 
 // resolveEnvironmentID picks the environment ID using the same priority as the

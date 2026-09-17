@@ -132,7 +132,7 @@ See [Workspaces](#workspaces) for how linked directories pin their workspace.
 
 | Command | Alias | Description |
 |---------|-------|-------------|
-| `deploy` | | Deploy from a connected git repo (github/gitlab) |
+| `deploy` | | Deploy the linked project or a service (`--wait` blocks until a terminal status; `--image <ref>` sets the image of an image service first) |
 | `up` | | Deploy current directory from local source — no git needed (v0.11.0+) |
 | `redeploy` | | Redeploy the latest deployment |
 | `rollback` | | Rollback to a previous deployment |
@@ -151,7 +151,7 @@ See [Workspaces](#workspaces) for how linked directories pin their workspace.
 | `run` | Run a command **locally** with service environment variables injected |
 | `shell` | Open a **local** subshell with service environment variables injected |
 | `ssh` | Open an interactive shell (or run a command) **inside the running container** — `upuai ssh -s api -- bin/rails console`. Auto-allocates a PTY when stdin/stdout are terminals; in a pipe/redirect it runs non-interactively with byte-exact stdout/stderr (`echo x \| upuai ssh -- cat`). Force with `-t/--tty`, disable with `-T/--no-tty`. `--process <name>` targets one process of a multi-process service. Generic/stack-agnostic; backed by a K8s exec |
-| `config show` | Show the current build/deploy config of the linked service (builder, build/start commands, health check, root directory). Alias: `config get` |
+| `config show` | Show the current source (image, or repository and branch) and build/deploy config of the linked service (builder, build/start commands, health check, root directory). `-o json` exposes the image at `.config.source.image`. Alias: `config get` |
 | `config set` | Update build/deploy config. `--root-dir apps/api` sets the build **Root Directory** for a monorepo on an existing github/gitlab service (no recreate needed); also `--builder`, `--dockerfile-path`, `--build-command`, `--start-command`, `--health-check` |
 | `service delete <name>` | Delete **a single service** (and its deployments, volumes, bucket attachments, cluster workloads, domains) without touching the rest of the project. Teardown runs in the background; the service is restorable for 30 days (volumes are not). `-y` skips confirmation. Contrast with `upuai delete` (whole project) and `upuai down` (stop the deployment, keep the service) |
 
@@ -232,7 +232,7 @@ That scoping is invisible until it bites: anything outside the active workspace 
 upuai workspace list            # ● marks the active one
 upuai workspace switch tai      # by slug, name or ID
 upuai workspace switch          # interactive picker
-upuai workspace current -o json # {"workspaceId","workspaceName","role"}
+upuai workspace current -o json # {"workspaceId","workspaceName","role"}; with UPUAI_TOKEN: {"workspaceId","workspaceName","workspaceSlug","machineToken"}
 ```
 
 **Linked directories remember their workspace.** `upuai init` and `upuai link` record it in `.upuai/config.json`, and any command that operates on the linked project or service realigns the session before talking to the API — so `cd`-ing into a project of another workspace just works:
@@ -270,7 +270,7 @@ $ upuai down -p api-prod
 
 Switching rotates your session tokens and the server pins the workspace to the refresh-token line, so it survives token rotation — you stay there until you switch again.
 
-Machine tokens (`UPUAI_TOKEN`) are bound to the workspace they were created in: `workspace list`, `workspace current` and `workspace switch` are refused with a token in the environment (memberships belong to the person, not the token). Their workspace is not readable client-side either, so `upuai whoami` reports `machineToken: true` instead of guessing. To deploy to another workspace from CI, mint a token inside it.
+Machine tokens (`UPUAI_TOKEN`) are bound to the workspace they were created in: `workspace list` and `workspace switch` are refused with a token in the environment (memberships belong to the person, not the token). `upuai whoami` and `upuai workspace current` describe the token itself (name, scopes, workspace and the project it is restricted to), read from the API. To deploy to another workspace from CI, mint a token inside it.
 
 ## Authentication
 
@@ -291,13 +291,57 @@ For **CI/automation**, mint a scoped, revocable token with `upuai token create` 
 ```bash
 # The secret is printed ONCE — store it immediately.
 upuai token create --name playground-ci --scope deploy            # read + write
-upuai token create --name readonly --scope read --expires 90      # GET-only, expires in 90 days
+upuai token create --name readonly --scope read --expires 90      # read-only (no ssh), expires in 90 days
 upuai token create --name proj-ci --scope deploy --project <id>   # narrowed to a single project
 upuai token list
 upuai token revoke <token-id>
 
 export UPUAI_TOKEN=upua_...   # then any command runs non-interactively
-upuai up
+upuai whoami                  # which token, workspace and project this is
+```
+
+Tokens can also be created, listed and revoked in the dashboard: **Settings → API tokens**.
+
+### Update an image service from CI
+
+Every deploy of an image service pulls the image again, so a mutable tag (`latest`) is picked up by a plain redeploy. To move a pinned tag, `deploy --image` sets it and deploys in one step. This GitHub Actions workflow checks Docker Hub daily and deploys only when a newer release exists:
+
+```yaml
+name: Update mailpit
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    env:
+      UPUAI_TOKEN: ${{ secrets.UPUAI_TOKEN }}   # upuai token create --scope deploy --project <id>
+      UPUAI_DISABLE_UPDATE_CHECK: '1'
+      IMAGE: axllent/mailpit
+    steps:
+      - name: Install the Upuai CLI
+        run: curl -fsSL https://raw.githubusercontent.com/saiph-ti/upuai-cli/main/install.sh | sh
+
+      - name: Latest release tag on Docker Hub
+        id: hub
+        shell: bash   # -eo pipefail: a failed curl or an empty match stops the job
+        run: |
+          tag=$(curl -fsSL "https://hub.docker.com/v2/namespaces/axllent/repositories/mailpit/tags?page_size=100&ordering=last_updated" \
+            | jq -r '.results[].name' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          echo "image=$IMAGE:$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Image running on Upuai
+        id: current
+        shell: bash
+        run: |
+          current=$(upuai config show -p my-project -s mailpit -e production -o json | jq -er '.config.source.image')
+          echo "image=$current" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy the new tag
+        if: steps.hub.outputs.image != steps.current.outputs.image
+        run: upuai deploy -p my-project -s mailpit -e production --image "${{ steps.hub.outputs.image }}" --wait --yes
 ```
 
 Scopes: `read` (safe/GET requests only) or `deploy` (read + write). A token never carries owner-only authority (billing, member management). Only a tenant Owner/Admin can create or revoke tokens.
@@ -339,7 +383,7 @@ All settings can be overridden with `UPUAI_` prefix:
 |----------|-------------|
 | `UPUAI_API_URL` | API base URL (overrides config) |
 | `UPUAI_WEB_URL` | Web dashboard URL (overrides config) |
-| `UPUAI_TOKEN` | Scoped machine token from `upuai token create`, for CI/automation. Takes precedence over the stored login. Bound to the workspace it was minted in — `workspace list/current/switch` are refused while it is set |
+| `UPUAI_TOKEN` | Scoped machine token from `upuai token create`, for CI/automation. Takes precedence over the stored login. Bound to the workspace it was minted in — `workspace list` and `switch` are refused while it is set; `whoami` and `workspace current` describe the token |
 | `UPUAI_DISABLE_UPDATE_CHECK` | Set to `1` to suppress the periodic "new version available" nudge (useful in CI/agent contexts) |
 | `UPUAI_SKIP_SKILL_INSTALL` | Set to `1` to disable auto-installing the Upuai agent skill into linked projects (see [Use with AI agents](#use-with-ai-agents)) |
 
@@ -374,9 +418,12 @@ upuai deploy --wait                   # Block until terminal status (success/fai
 upuai deploy --wait --wait-timeout 600 # Wait up to 10 minutes (default 300 s)
 upuai deploy --wait -o json           # JSON-printed final Deployment object
 upuai deploy --watch                  # Watch for file changes and auto-redeploy
+upuai deploy -s mailpit --image axllent/mailpit:v1.25.0 --wait --yes  # Set an image service's image, then deploy
 ```
 
 `--wait` polls every 3 s. Exit code is non-zero on `failed` / `cancelled` / `build_failed`.
+
+`--image` only applies to image services (a git service would be converted, so it is refused) and needs a service (`-s` or the linked one). The image is set in the same environment the deploy targets (`-e`, else the linked one, else the default), and an empty tag or digest is rejected before anything is written.
 
 ### up
 

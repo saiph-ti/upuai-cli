@@ -146,8 +146,9 @@ var workspaceCurrentCmd = &cobra.Command{
 			return err
 		}
 
+		// Com UPUAI_TOKEN o workspace ativo é o do token, lido pela API.
 		if config.MachineTokenFromEnv() != "" {
-			return machineTokenWorkspaceError("show the active workspace", fmt.Sprintf("unset %s and run 'upuai workspace current' with your 'upuai login' session", config.EnvTokenVar))
+			return currentMachineTokenWorkspace(api.NewClient(), getOutputFormat())
 		}
 
 		claims, err := activeWorkspace()
@@ -325,7 +326,34 @@ func assertSwitchableSession() error {
 	return nil
 }
 
-// machineTokenWorkspaceError é a recusa comum dos comandos de workspace sob
+func currentMachineTokenWorkspace(client *api.Client, format ui.OutputFormat) error {
+	self, err := client.GetSelfToken()
+	if err != nil {
+		if api.StatusCode(err) == 401 {
+			return fmt.Errorf("%s was rejected by the API — it is revoked, expired or mistyped", config.EnvTokenVar)
+		}
+		return fmt.Errorf("read the workspace of %s: %w", config.EnvTokenVar, err)
+	}
+	if format == ui.FormatJSON {
+		ui.PrintJSON(map[string]any{
+			"workspaceId":   self.Workspace.ID,
+			"workspaceName": self.Workspace.Name,
+			"workspaceSlug": self.Workspace.Slug,
+			"machineToken":  true,
+		})
+		return nil
+	}
+	fmt.Println()
+	ui.PrintKeyValue(
+		"Workspace", self.Workspace.Name,
+		"ID", self.Workspace.ID,
+		"Auth", "machine token ("+config.EnvTokenVar+")",
+	)
+	fmt.Println()
+	return nil
+}
+
+// machineTokenWorkspaceError é a recusa comum de `workspace list` e `switch` sob
 // UPUAI_TOKEN. O token pertence ao workspace em que foi criado e a API recusa a
 // token de máquina as superfícies da pessoa (memberships, troca de sessão). Como
 // o token tem precedência sobre o login guardado, a saída para inspecionar é tirar

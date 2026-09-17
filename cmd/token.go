@@ -195,7 +195,7 @@ func orDash(s *string) string {
 
 func init() {
 	tokenCreateCmd.Flags().StringVar(&tokenCreateName, "name", "", "Human-readable name for the token (required)")
-	tokenCreateCmd.Flags().StringSliceVar(&tokenCreateScopes, "scope", []string{"deploy"}, "Scope(s): read (GET-only) or deploy (read+write). Repeatable")
+	tokenCreateCmd.Flags().StringSliceVar(&tokenCreateScopes, "scope", []string{"deploy"}, "Scope(s): read (read-only; no ssh, no bucket credentials) or deploy (read+write). Repeatable")
 	tokenCreateCmd.Flags().StringVar(&tokenCreateProject, "project", "", "Narrow the token to a single project ID (default: tenant-wide)")
 	tokenCreateCmd.Flags().IntVar(&tokenCreateExpires, "expires", 0, "Expire after N days (default: never; revoke to disable)")
 

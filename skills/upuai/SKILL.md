@@ -28,12 +28,13 @@ Read only the section(s) that match the user's intent.
 
 Always invoke `upuai` in non-interactive mode. Without these, prompts will hang in agent environments.
 
-1. **Auth**: always run `upuai whoami` first. If it returns the expected user, you're authenticated — the CLI reads `~/.upuai/credentials.json` and auto-refreshes the JWT on 401. If `whoami` fails, ask the user to run `upuai login` once on their own machine (browser OAuth or email OTP — both interactive), same pattern as `railway login`, `vercel login`, `fly auth login`. For **CI/automation**, the sanctioned headless path is a scoped token: a human runs `upuai token create --name <name> --scope deploy` (add `--project <id>` to scope it to one project, `--expires <days>` for a TTL), then sets the printed secret in `UPUAI_TOKEN` (opaque, long-lived, revocable). `--scope read` mints a GET-only token. List with `upuai token list`, revoke with `upuai token revoke <id>`. Never stuff a user JWT into an env var — use `upuai token`.
+1. **Auth**: always run `upuai whoami` first. If it returns the expected user, you're authenticated — the CLI reads `~/.upuai/credentials.json` and auto-refreshes the JWT on 401. If `whoami` fails, ask the user to run `upuai login` once on their own machine (browser OAuth or email OTP — both interactive), same pattern as `railway login`, `vercel login`, `fly auth login`. For **CI/automation**, the sanctioned headless path is a scoped token: a human runs `upuai token create --name <name> --scope deploy` (add `--project <id>` to scope it to one project, `--expires <days>` for a TTL), then sets the printed secret in `UPUAI_TOKEN` (opaque, long-lived, revocable). `--scope read` mints a read-only token (GET only, and neither `upuai ssh` nor bucket credentials). List with `upuai token list`, revoke with `upuai token revoke <id>`. Never stuff a user JWT into an env var — use `upuai token`.
 2. **Skip confirmations**: pass `-y` / `--yes` on any command that mutates state (`init`, `deploy`, `down`, `delete`, `rollback`, `promote`, `db restore`, `vars delete`, `domain delete`).
 3. **JSON output for parsing**: pass `-o json` on `status`, `logs`, `list`, `vars list`, `domain list`, `env list`, and (when waiting) `deploy --wait -o json`.
 4. **Pre-supply flags on `init`**: when `--yes` is set, `init` requires `--name <slug>`. Pass `--framework <name>` to skip auto-detect prompts. Pass `--repo <owner>/<repo>` (or `--image <ref>`) to create a deployable service in one step instead of an empty placeholder. The CLI errors out with a clear message if a flag is missing rather than hanging on a prompt.
 5. **Block until terminal**: prefer `upuai deploy --wait` over polling `upuai status` yourself — the CLI already handles the polling, status transitions, timeout, and non-zero exit on failure.
-6. **Know your workspace**: every session is scoped to ONE workspace, and the API returns a plain 404 for anything outside it. `upuai whoami -o json` reports `workspace` / `workspaceId` / `role` — **except under `UPUAI_TOKEN`**, where it reports `machineToken: true` and omits them, because a machine token is opaque and its workspace is not readable client-side (it is fixed at creation; mint the token inside the workspace you intend to deploy to). A linked directory pins its workspace and the CLI realigns the session before any command that touches the linked project or service, printing `→ workspace: <name>` to **stderr** (stdout stays clean for `-o json`). See [Workspaces](#workspaces).
+   - **Image services**: `upuai deploy -s <service> --image <ref> --wait --yes` sets the image and deploys in one step (refused on git services — it would convert them). Every deploy re-pulls the image, so a mutable tag only needs `upuai deploy -s <service> --wait --yes`. Read the current image with `upuai config show -s <service> -o json | jq -r '.config.source.image'`.
+6. **Know your workspace**: every session is scoped to ONE workspace, and the API returns a plain 404 for anything outside it. `upuai whoami -o json` reports `workspace` / `workspaceId` / `role`; **under `UPUAI_TOKEN`** it reports `machineToken: true` with `tokenName`, `scopes`, `workspace`/`workspaceId` and `tokenProjectId`/`tokenProjectName` when the token is restricted to one project (a token's workspace is fixed at creation; mint it inside the workspace you intend to deploy to). A linked directory pins its workspace and the CLI realigns the session before any command that touches the linked project or service, printing `→ workspace: <name>` to **stderr** (stdout stays clean for `-o json`). See [Workspaces](#workspaces).
 
 Before running any command that touches user state, confirm the action with the user. Read flags from the user — do not invent project names, custom domains, or env-var values.
 
@@ -170,7 +171,7 @@ If `status === "success"` and `url` responds 200, report it to the user. Otherwi
 
 Decision tree for "it's not working":
 
-0. **"Project not found" / `upuai list` is empty / a project you know exists 404s?** → you are almost certainly in the wrong workspace. `upuai workspace list` shows all of them and marks the active one; `upuai workspace switch <slug>` moves. With `UPUAI_TOKEN` set, both are refused: the token's workspace is the one it was created in — mint a token inside the right workspace. The API cannot tell you "wrong workspace" directly — it returns 404 for anything outside the active one, by design. See [Workspaces](#workspaces).
+0. **"Project not found" / `upuai list` is empty / a project you know exists 404s?** → you are almost certainly in the wrong workspace. `upuai workspace list` shows all of them and marks the active one; `upuai workspace switch <slug>` moves. With `UPUAI_TOKEN` set, both are refused: `upuai whoami` shows the token's workspace and project — mint a token inside the right workspace. The API cannot tell you "wrong workspace" directly — it returns 404 for anything outside the active one, by design. See [Workspaces](#workspaces).
 1. **Did `deploy` even trigger?** → `upuai status -o json | jq '.environments[].services[].lastDeployment'`. If everything is `null`, the project isn't linked or has no deployments yet — run `upuai link <project-id> --service <name> --env <env>` (the `--service` / `--env` flags skip the interactive picker).
 2. **Status `failed` or `build_failed`?** → `upuai logs -n 100 --build` shows the build output; `upuai logs -n 100 --deploy` shows the release-phase + rollout log; `upuai logs -n 100` shows runtime logs. Common causes:
    - **Build failure** (`build_failed`): missing `buildCommand` for the framework, missing dependency, wrong Node/Python version. Suggest `upuai.toml` with explicit `[build]` block — see [Configure](#configure).
@@ -305,7 +306,7 @@ This matters because the API is fail-closed: anything outside the active workspa
 
 ```bash
 upuai workspace list                 # all your workspaces; ● marks the active one
-upuai workspace current -o json      # {"workspaceId","workspaceName","role"}
+upuai workspace current -o json      # {"workspaceId","workspaceName","role"}; under UPUAI_TOKEN: the token's workspace + machineToken
 upuai workspace switch tai           # by slug, name or ID
 upuai workspace switch               # interactive picker (needs a TTY)
 ```
@@ -321,7 +322,7 @@ Cross-workspace by ID:
 
 Switching rotates the session tokens and is durable: the server pins the workspace to the refresh-token line, so it survives token rotation and later commands.
 
-**Machine tokens do not list or switch workspaces.** A token from `upuai token create` is bound to the workspace it was minted in, and `workspace list/current/switch` are refused while `UPUAI_TOKEN` is set; `UPUAI_TOKEN` pointing at the wrong workspace is a pipeline misconfiguration — mint a new token inside the target workspace. The CLI says so instead of failing with a generic 403.
+**Machine tokens do not list or switch workspaces.** A token from `upuai token create` is bound to the workspace it was minted in, and `workspace list` / `switch` are refused while `UPUAI_TOKEN` is set (`workspace current` and `whoami` describe the token); `UPUAI_TOKEN` pointing at the wrong workspace is a pipeline misconfiguration — mint a new token inside the target workspace. The CLI says so instead of failing with a generic 403.
 
 ## Environments
 
