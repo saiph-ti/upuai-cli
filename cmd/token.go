@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/upuai-cloud/cli/internal/api"
@@ -110,7 +111,7 @@ var tokenListCmd = &cobra.Command{
 
 		table := ui.NewTable("ID", "NAME", "PREFIX", "SCOPES", "STATUS", "LAST USED")
 		for _, t := range tokens {
-			table.AddRow(t.ID, t.Name, t.Prefix, strings.Join(t.Scopes, ","), tokenStatus(t), orDash(t.LastUsedAt))
+			table.AddRow(t.ID, t.Name, t.Prefix, strings.Join(t.Scopes, ","), tokenStatus(t, time.Now()), orDash(t.LastUsedAt))
 		}
 		table.Print()
 		return nil
@@ -167,9 +168,20 @@ func normalizeTokenScopes(in []string) ([]string, error) {
 	return out, nil
 }
 
-func tokenStatus(t api.ApiToken) string {
+// tokenStatus espelha a recusa da API: revogado ou expirado não autentica. Um
+// expiresAt ilegível é mostrado como está, sem afirmar que o token vale.
+func tokenStatus(t api.ApiToken, now time.Time) string {
 	if t.RevokedAt != nil {
 		return "revoked"
+	}
+	if t.ExpiresAt != nil && *t.ExpiresAt != "" {
+		expiresAt, err := time.Parse(time.RFC3339, *t.ExpiresAt)
+		if err != nil {
+			return "expires " + *t.ExpiresAt
+		}
+		if !expiresAt.After(now) {
+			return "expired"
+		}
 	}
 	return "active"
 }

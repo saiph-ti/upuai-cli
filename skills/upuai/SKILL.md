@@ -46,6 +46,9 @@ Run once per machine. Skip if `upuai version` is **>= 0.10.0** and `upuai whoami
 brew tap saiph-ti/upuai-cli
 brew install upuai
 
+# Linux / macOS without Homebrew (servers, CI runners) — verifies the SHA-256
+curl -fsSL https://raw.githubusercontent.com/saiph-ti/upuai-cli/main/install.sh | sh
+
 # Windows (PowerShell)
 scoop bucket add upuai https://github.com/saiph-ti/scoop-upuai-cli
 scoop install upuai
@@ -167,7 +170,7 @@ If `status === "success"` and `url` responds 200, report it to the user. Otherwi
 
 Decision tree for "it's not working":
 
-0. **"Project not found" / `upuai list` is empty / a project you know exists 404s?** → you are almost certainly in the wrong workspace. `upuai workspace list` shows all of them and marks the active one; `upuai workspace switch <slug>` moves. The API cannot tell you "wrong workspace" directly — it returns 404 for anything outside the active one, by design. See [Workspaces](#workspaces).
+0. **"Project not found" / `upuai list` is empty / a project you know exists 404s?** → you are almost certainly in the wrong workspace. `upuai workspace list` shows all of them and marks the active one; `upuai workspace switch <slug>` moves. With `UPUAI_TOKEN` set, both are refused: the token's workspace is the one it was created in — mint a token inside the right workspace. The API cannot tell you "wrong workspace" directly — it returns 404 for anything outside the active one, by design. See [Workspaces](#workspaces).
 1. **Did `deploy` even trigger?** → `upuai status -o json | jq '.environments[].services[].lastDeployment'`. If everything is `null`, the project isn't linked or has no deployments yet — run `upuai link <project-id> --service <name> --env <env>` (the `--service` / `--env` flags skip the interactive picker).
 2. **Status `failed` or `build_failed`?** → `upuai logs -n 100 --build` shows the build output; `upuai logs -n 100 --deploy` shows the release-phase + rollout log; `upuai logs -n 100` shows runtime logs. Common causes:
    - **Build failure** (`build_failed`): missing `buildCommand` for the framework, missing dependency, wrong Node/Python version. Suggest `upuai.toml` with explicit `[build]` block — see [Configure](#configure).
@@ -318,7 +321,7 @@ Cross-workspace by ID:
 
 Switching rotates the session tokens and is durable: the server pins the workspace to the refresh-token line, so it survives token rotation and later commands.
 
-**Machine tokens do not switch.** A token from `upuai token create` is bound to the workspace it was minted in; `UPUAI_TOKEN` pointing at the wrong workspace is a pipeline misconfiguration — mint a new token inside the target workspace. The CLI says so instead of failing with a generic 403.
+**Machine tokens do not list or switch workspaces.** A token from `upuai token create` is bound to the workspace it was minted in, and `workspace list/current/switch` are refused while `UPUAI_TOKEN` is set; `UPUAI_TOKEN` pointing at the wrong workspace is a pipeline misconfiguration — mint a new token inside the target workspace. The CLI says so instead of failing with a generic 403.
 
 ## Environments
 

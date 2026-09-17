@@ -75,6 +75,10 @@ var workspaceListCmd = &cobra.Command{
 		if err := requireAuth(); err != nil {
 			return err
 		}
+		// As memberships são da pessoa; a API recusa token de máquina aqui.
+		if config.MachineTokenFromEnv() != "" {
+			return machineTokenWorkspaceError("list workspaces", fmt.Sprintf("unset %s and run 'upuai workspace list' with your 'upuai login' session", config.EnvTokenVar))
+		}
 
 		client := api.NewClient()
 		var workspaces []api.Workspace
@@ -143,7 +147,7 @@ var workspaceCurrentCmd = &cobra.Command{
 		}
 
 		if config.MachineTokenFromEnv() != "" {
-			return fmt.Errorf("running with a machine token (%s) — its workspace is fixed at creation and not readable from the token; run 'upuai workspace list' with an interactive login to inspect workspaces", config.EnvTokenVar)
+			return machineTokenWorkspaceError("show the active workspace", fmt.Sprintf("unset %s and run 'upuai workspace current' with your 'upuai login' session", config.EnvTokenVar))
 		}
 
 		claims, err := activeWorkspace()
@@ -316,9 +320,18 @@ func matchWorkspaceRef(workspaces []api.Workspace, ref string) (*api.Workspace, 
 // a saída é emitir um token no workspace destino.
 func assertSwitchableSession() error {
 	if config.MachineTokenFromEnv() != "" {
-		return fmt.Errorf("cannot switch workspace with a machine token: %s is scoped to a single workspace at creation\n  create a token inside the target workspace instead: upuai token create --name ci", config.EnvTokenVar)
+		return machineTokenWorkspaceError("switch workspace", "create a token inside the target workspace instead: upuai token create --name ci")
 	}
 	return nil
+}
+
+// machineTokenWorkspaceError é a recusa comum dos comandos de workspace sob
+// UPUAI_TOKEN. O token pertence ao workspace em que foi criado e a API recusa a
+// token de máquina as superfícies da pessoa (memberships, troca de sessão). Como
+// o token tem precedência sobre o login guardado, a saída para inspecionar é tirar
+// a variável do ambiente — não "fazer login", que sozinho não muda nada.
+func machineTokenWorkspaceError(action, hint string) error {
+	return fmt.Errorf("cannot %s with a machine token: %s is bound to the workspace it was created in\n  %s", action, config.EnvTokenVar, hint)
 }
 
 // switchWorkspace troca a sessão para tenantID e persiste o novo par de tokens.

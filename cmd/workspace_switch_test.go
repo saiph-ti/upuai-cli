@@ -157,3 +157,30 @@ func TestSwitchWorkspaceBlockedForMachineToken(t *testing.T) {
 		t.Fatalf("nenhuma request deveria sair, houve %d", hits)
 	}
 }
+
+// Listar workspaces é ler as memberships de uma pessoa; a API recusa token de
+// máquina. O guard orienta antes da chamada, sem request saindo.
+func TestListWorkspacesBlockedForMachineToken(t *testing.T) {
+	hits := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/tenant", func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	seedSession(t, srv.URL)
+	t.Setenv(config.EnvTokenVar, "upua_ci_token")
+
+	err := workspaceListCmd.RunE(workspaceListCmd, nil)
+	if err == nil {
+		t.Fatal("esperado erro com machine token")
+	}
+	if !strings.Contains(err.Error(), "unset "+config.EnvTokenVar) {
+		t.Fatalf("erro deveria mandar tirar o token do ambiente (ele tem precedência sobre o login), veio: %v", err)
+	}
+	if hits != 0 {
+		t.Fatalf("nenhuma request deveria sair, houve %d", hits)
+	}
+}

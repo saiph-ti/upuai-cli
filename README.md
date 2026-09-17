@@ -20,15 +20,17 @@ scoop install upuai
 upuai version
 ```
 
-### Direct download
-
-Grab the right archive for your OS/arch from [Releases](https://github.com/saiph-ti/upuai-cli/releases/latest), untar, and put `upuai` on your `$PATH`.
+### Install script (Linux / macOS — servers and CI)
 
 ```bash
-# Linux x86_64 (replace <version> with the desired tag, e.g. v0.0.1)
-curl -sSfL https://github.com/saiph-ti/upuai-cli/releases/download/<version>/upuai_<version_no_v>_linux_x86_64.tar.gz | tar -xz
-sudo mv upuai /usr/local/bin/
+curl -fsSL https://raw.githubusercontent.com/saiph-ti/upuai-cli/main/install.sh | sh
 ```
+
+Downloads the release for your OS/arch, checks it against the release `checksums.txt` and installs to `/usr/local/bin` when writable, otherwise `~/.local/bin` (on GitHub Actions that directory is added to `GITHUB_PATH`). Variables go on the `sh` side of the pipe: `curl -fsSL …/install.sh | UPUAI_VERSION=0.21.1 UPUAI_INSTALL_DIR=$HOME/bin sh` pins a version and picks the destination.
+
+### Direct download
+
+Grab the archive for your OS/arch from [Releases](https://github.com/saiph-ti/upuai-cli/releases/latest) — assets are named `upuai_<version>_<os>_<arch>.tar.gz` (`.zip` on Windows) — verify it against `checksums.txt`, untar, and put `upuai` on your `$PATH`.
 
 ### From source
 
@@ -268,7 +270,7 @@ $ upuai down -p api-prod
 
 Switching rotates your session tokens and the server pins the workspace to the refresh-token line, so it survives token rotation — you stay there until you switch again.
 
-Machine tokens (`UPUAI_TOKEN`) are bound to the workspace they were created in and cannot switch. Their workspace is not readable client-side either, so `upuai whoami` reports `machineToken: true` instead of guessing. To deploy to another workspace from CI, mint a token inside it.
+Machine tokens (`UPUAI_TOKEN`) are bound to the workspace they were created in: `workspace list`, `workspace current` and `workspace switch` are refused with a token in the environment (memberships belong to the person, not the token). Their workspace is not readable client-side either, so `upuai whoami` reports `machineToken: true` instead of guessing. To deploy to another workspace from CI, mint a token inside it.
 
 ## Authentication
 
@@ -337,7 +339,7 @@ All settings can be overridden with `UPUAI_` prefix:
 |----------|-------------|
 | `UPUAI_API_URL` | API base URL (overrides config) |
 | `UPUAI_WEB_URL` | Web dashboard URL (overrides config) |
-| `UPUAI_TOKEN` | Scoped machine token from `upuai token create`, for CI/automation. Takes precedence over the stored login. Bound to the workspace it was minted in — it cannot switch workspaces |
+| `UPUAI_TOKEN` | Scoped machine token from `upuai token create`, for CI/automation. Takes precedence over the stored login. Bound to the workspace it was minted in — `workspace list/current/switch` are refused while it is set |
 | `UPUAI_DISABLE_UPDATE_CHECK` | Set to `1` to suppress the periodic "new version available" nudge (useful in CI/agent contexts) |
 | `UPUAI_SKIP_SKILL_INSTALL` | Set to `1` to disable auto-installing the Upuai agent skill into linked projects (see [Use with AI agents](#use-with-ai-agents)) |
 
