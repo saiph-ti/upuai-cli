@@ -300,6 +300,19 @@ upuai db public enable --any --yes     # open to any IP (no prompt)
 upuai db public disable                # unpublish (route + allowlist removed)
 ```
 
+### Volumes
+
+```bash
+upuai volume list                                  # disks and mount points
+upuai volume add --path /data --size 5 --yes       # create + mount (5 GB)
+upuai volume remove data --yes                     # detach + delete (files are lost)
+```
+
+A volume is ReadWriteOnce: the service runs a SINGLE replica (a `scale` above 1 is refused
+with `volumeSingleReplica`) and every deploy stops the old pod before starting the new one.
+Mount paths are absolute and outside system directories. Daily block backup, kept 7 days.
+CLI v0.24.0+.
+
 `db public enable` with no flag keeps the current allowlist — a restricted database is never
 opened by omission. With `--allow`, only those origins reach the database; anything else is
 refused at the edge, before Postgres. Needs owner or admin (CLI v0.23.0+).

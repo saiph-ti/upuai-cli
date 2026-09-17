@@ -168,6 +168,14 @@ See [Workspaces](#workspaces) for how linked directories pin their workspace.
 | `db public enable --any` | Publish open to any IP |
 | `db public disable` | Remove the public endpoint and its allowlist |
 
+### Volumes
+
+| Command | Description |
+|---------|-------------|
+| `volume list` | List the project's persistent disks and where they are mounted |
+| `volume add --path <abs> --size <GB>` | Create a disk and mount it on the service (single replica from then on) |
+| `volume remove <name\|id>` | Detach and delete the disk — the files are lost |
+
 ### Environment
 
 | Command | Alias | Description |
