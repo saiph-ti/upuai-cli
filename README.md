@@ -163,6 +163,10 @@ See [Workspaces](#workspaces) for how linked directories pin their workspace.
 | `db connect --print` | Print the public connection string (script-friendly) |
 | `db backup --out <file>` | `pg_dump` the database via the public endpoint |
 | `db restore -f <file>` | `pg_restore` a dump file via the public endpoint |
+| `db public` | Show the public endpoint and which origins may connect |
+| `db public enable --allow <ip\|cidr>` | Publish restricted to those origins (repeatable; replaces the list) |
+| `db public enable --any` | Publish open to any IP |
+| `db public disable` | Remove the public endpoint and its allowlist |
 
 ### Environment
 

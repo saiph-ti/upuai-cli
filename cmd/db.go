@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/netip"
 	"os"
 	"os/exec"
 	"strings"
@@ -26,6 +27,11 @@ var (
 	// dbServiceRef permite override explícito do banco-alvo (paridade com -s/--service
 	// dos outros comandos). Vazio = resolve o único service tipo=database do projeto.
 	dbServiceRef string
+	// dbAllowCIDRs / dbAllowAny: quem pode conectar no endpoint público.
+	// --allow é repetível; --any abre para qualquer IP (explícito de propósito:
+	// sem flag nenhuma, `db public enable` PRESERVA a allowlist existente).
+	dbAllowCIDRs []string
+	dbAllowAny   bool
 )
 
 // databaseServiceType é o discriminador que a API usa para identificar o
@@ -44,7 +50,10 @@ Examples:
   upuai db connect                  Open an interactive psql session
   upuai db connect --print          Print the public connection string and exit
   upuai db backup --out file.dump   Run pg_dump against the public endpoint
-  upuai db restore -f file.dump     Restore a dump via pg_restore`,
+  upuai db restore -f file.dump     Restore a dump via pg_restore
+  upuai db public                   Show the public endpoint and who may connect
+  upuai db public enable --allow IP Publish restricted to one origin
+  upuai db public disable           Remove the public endpoint`,
 }
 
 var dbConnectCmd = &cobra.Command{
@@ -239,13 +248,205 @@ func loadOrEnablePublicAccess() (*api.PublicAccessInfo, error) {
 
 	if err := ui.RunWithSpinner("Enabling public access...", func() error {
 		var apiErr error
-		info, apiErr = client.SetDatabasePublicAccess(envID, serviceID, true)
+		// Endpoint estava desligado: não existe allowlist a preservar (desligar
+		// apaga o middleware). Abre e avisa como restringir.
+		info, apiErr = client.SetDatabasePublicAccess(envID, serviceID, true, nil)
 		return apiErr
 	}); err != nil {
 		return nil, fmt.Errorf("enable public access: %w", err)
 	}
 	ui.PrintSuccess(fmt.Sprintf("public access enabled at %s:%d", info.Host, info.Port))
+	ui.PrintInfo("open to any IP — restrict with: upuai db public enable --allow <cidr>")
 	return info, nil
+}
+
+// normalizeAllowCIDRs valida e canonicaliza as origens vindas de --allow, com a
+// mesma regra do orchestrator (IP solto vira /32 ou /128, prefixo é normalizado,
+// duplicata sai). Validar aqui evita round-trip só pra receber 400.
+func normalizeAllowCIDRs(raw []string) ([]string, error) {
+	seen := make(map[string]struct{}, len(raw))
+	out := make([]string, 0, len(raw))
+	for _, entry := range raw {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		var prefix netip.Prefix
+		if addr, err := netip.ParseAddr(entry); err == nil {
+			prefix = netip.PrefixFrom(addr, addr.BitLen())
+		} else {
+			parsed, perr := netip.ParsePrefix(entry)
+			if perr != nil {
+				return nil, fmt.Errorf("invalid --allow %q: use an IP (203.0.113.7) or CIDR (203.0.113.0/24)", entry)
+			}
+			prefix = parsed.Masked()
+		}
+		canonical := prefix.String()
+		if _, dup := seen[canonical]; dup {
+			continue
+		}
+		seen[canonical] = struct{}{}
+		out = append(out, canonical)
+	}
+	return out, nil
+}
+
+// resolvePublicAccessAllowList decide a lista a enviar num `db public enable`:
+// --any zera (aberto), --allow substitui, nenhum dos dois PRESERVA a lista atual
+// — abrir um banco restrito nunca acontece por omissão.
+func resolvePublicAccessAllowList(current *api.PublicAccessInfo) ([]string, error) {
+	if dbAllowAny {
+		if len(dbAllowCIDRs) > 0 {
+			return nil, fmt.Errorf("--any and --allow are mutually exclusive")
+		}
+		return nil, nil
+	}
+	if len(dbAllowCIDRs) > 0 {
+		return normalizeAllowCIDRs(dbAllowCIDRs)
+	}
+	if current != nil && current.Enabled {
+		return current.AllowedCidrs, nil
+	}
+	return nil, nil
+}
+
+// printDatabasePublicAccess mostra o estado do endpoint em formato humano ou JSON.
+func printDatabasePublicAccess(info *api.PublicAccessInfo, format ui.OutputFormat) {
+	if format == ui.FormatJSON {
+		ui.PrintJSON(info)
+		return
+	}
+	if !info.Enabled {
+		ui.PrintKeyValue("Public access", "disabled")
+		return
+	}
+	access := "any IP"
+	if len(info.AllowedCidrs) > 0 {
+		access = strings.Join(info.AllowedCidrs, ", ")
+	}
+	ui.PrintKeyValue(
+		"Public access", "enabled",
+		"Host", info.Host,
+		"Port", fmt.Sprintf("%d", info.Port),
+		"Allowed from", access,
+	)
+}
+
+var dbPublicCmd = &cobra.Command{
+	Use:   "public",
+	Short: "Inspect the public endpoint of the linked database",
+	Long: `Print whether the database is reachable from the internet and which origins
+may connect.
+
+Use 'enable' / 'disable' to change it.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireAuth(); err != nil {
+			return err
+		}
+		client := api.NewClient()
+		envID, serviceID, err := resolveDatabaseService(client, dbServiceRef)
+		if err != nil {
+			return err
+		}
+		var info *api.PublicAccessInfo
+		if err := ui.RunWithSpinner("Fetching access status...", func() error {
+			var apiErr error
+			info, apiErr = client.GetDatabasePublicAccess(envID, serviceID)
+			return apiErr
+		}); err != nil {
+			return fmt.Errorf("get public access: %w", err)
+		}
+		printDatabasePublicAccess(info, getOutputFormat())
+		return nil
+	},
+}
+
+var dbPublicEnableCmd = &cobra.Command{
+	Use:   "enable",
+	Short: "Publish the database endpoint (optionally restricted by IP)",
+	Long: `Publish the database on the internet and choose who may connect.
+
+  upuai db public enable --allow 203.0.113.7 --allow 10.0.0.0/8
+      Only those origins connect; anything else is refused at the edge.
+
+  upuai db public enable --any
+      Open to any IP — password and TLS are the only barrier.
+
+  upuai db public enable
+      Publishes keeping the current allowlist. An endpoint that is already
+      restricted is never opened by omission.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireAuth(); err != nil {
+			return err
+		}
+		client := api.NewClient()
+		envID, serviceID, err := resolveDatabaseService(client, dbServiceRef)
+		if err != nil {
+			return err
+		}
+		var current *api.PublicAccessInfo
+		if err := ui.RunWithSpinner("Fetching access status...", func() error {
+			var apiErr error
+			current, apiErr = client.GetDatabasePublicAccess(envID, serviceID)
+			return apiErr
+		}); err != nil {
+			return fmt.Errorf("get public access: %w", err)
+		}
+		allow, err := resolvePublicAccessAllowList(current)
+		if err != nil {
+			return err
+		}
+		if len(allow) == 0 && !flagYes {
+			ui.PrintWarning("This exposes the database to ANY IP on the internet (password + TLS only).")
+			confirmed, cerr := ui.Confirm("Continue?")
+			if cerr != nil {
+				return cerr
+			}
+			if !confirmed {
+				ui.PrintInfo("aborted")
+				return nil
+			}
+		}
+		var info *api.PublicAccessInfo
+		if err := ui.RunWithSpinner("Applying public access...", func() error {
+			var apiErr error
+			info, apiErr = client.SetDatabasePublicAccess(envID, serviceID, true, allow)
+			return apiErr
+		}); err != nil {
+			return fmt.Errorf("enable public access: %w", err)
+		}
+		ui.PrintSuccess("public access enabled")
+		printDatabasePublicAccess(info, getOutputFormat())
+		return nil
+	},
+}
+
+var dbPublicDisableCmd = &cobra.Command{
+	Use:   "disable",
+	Short: "Remove the public endpoint of the linked database",
+	Long: `Unpublish the database. The route and the IP allowlist are removed; the
+database keeps running and stays reachable from inside the platform.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireAuth(); err != nil {
+			return err
+		}
+		client := api.NewClient()
+		envID, serviceID, err := resolveDatabaseService(client, dbServiceRef)
+		if err != nil {
+			return err
+		}
+		var info *api.PublicAccessInfo
+		if err := ui.RunWithSpinner("Disabling public access...", func() error {
+			var apiErr error
+			info, apiErr = client.SetDatabasePublicAccess(envID, serviceID, false, nil)
+			return apiErr
+		}); err != nil {
+			return fmt.Errorf("disable public access: %w", err)
+		}
+		ui.PrintSuccess("public access disabled")
+		printDatabasePublicAccess(info, getOutputFormat())
+		return nil
+	},
 }
 
 // runLibpqTool exec um binário libpq (psql/pg_dump/pg_restore) capturando stderr
@@ -392,6 +593,14 @@ func init() {
 		c.Flags().StringVarP(&dbServiceRef, "service", "s", "", "Database service name, slug, or ID (overrides project auto-resolve)")
 	}
 
+	dbPublicEnableCmd.Flags().StringArrayVar(&dbAllowCIDRs, "allow", nil, "Origin allowed to connect (IP or CIDR). Repeatable; replaces the current list")
+	dbPublicEnableCmd.Flags().BoolVar(&dbAllowAny, "any", false, "Allow any IP (clears the allowlist)")
+	for _, c := range []*cobra.Command{dbPublicCmd, dbPublicEnableCmd, dbPublicDisableCmd} {
+		c.Flags().StringVarP(&dbServiceRef, "service", "s", "", "Database service name, slug, or ID (overrides project auto-resolve)")
+	}
+	dbPublicCmd.AddCommand(dbPublicEnableCmd)
+	dbPublicCmd.AddCommand(dbPublicDisableCmd)
+	dbCmd.AddCommand(dbPublicCmd)
 	dbCmd.AddCommand(dbConnectCmd)
 	dbCmd.AddCommand(dbBackupCmd)
 	dbCmd.AddCommand(dbRestoreCmd)

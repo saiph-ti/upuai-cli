@@ -294,7 +294,15 @@ upuai db connect --enable              # auto-enable public access if disabled
 upuai db connect                       # interactive psql session (needs TTY — skip in agent flows)
 upuai db backup --out backup.dump      # pg_dump
 upuai db restore -f backup.dump --yes  # pg_restore
+upuai db public                        # is it published? from which origins?
+upuai db public enable --allow 203.0.113.7 --allow 10.0.0.0/8
+upuai db public enable --any --yes     # open to any IP (no prompt)
+upuai db public disable                # unpublish (route + allowlist removed)
 ```
+
+`db public enable` with no flag keeps the current allowlist — a restricted database is never
+opened by omission. With `--allow`, only those origins reach the database; anything else is
+refused at the edge, before Postgres. Needs owner or admin (CLI v0.23.0+).
 
 For automated tasks, use `--print` / `--output json` to fetch the connection string, then run queries via your own `psql` invocation. Do not run `upuai db connect` without `--print` inside an agent — it opens an interactive subshell.
 
