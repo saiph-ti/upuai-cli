@@ -127,14 +127,18 @@ func TestNormalizeRootDir(t *testing.T) {
 		want string
 	}{
 		{"", ""},
-		{".", ""},
-		{"/", ""},
-		{"./", ""},
 		{"  ", ""},
-		{" . ", ""},
+		// Raiz explícita: distinta de "" (não configurado), que num monorepo
+		// pnpm faz o build falhar.
+		{".", "."},
+		{"/", "."},
+		{"./", "."},
+		{" . ", "."},
 		{"apps/api", "apps/api"},
 		{"./apps/api", "apps/api"},
-		{"apps/api/", "apps/api/"},
+		{"apps/api/", "apps/api"},
+		{"/apps//api/", "apps/api"},
+		{"apps/./api", "apps/api"},
 		{"sub", "sub"},
 	}
 

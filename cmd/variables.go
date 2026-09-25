@@ -228,11 +228,56 @@ var variablesSetCmd = &cobra.Command{
 				ui.PrintSuccess(fmt.Sprintf("Set %s%s", v.Key, suffix))
 			}
 		}
-		if t.layer != "service" {
-			ui.PrintInfo("Redeploy the affected services to apply these changes.")
-		}
+		printAppliesOnNextDeploy(t.layer)
 		return nil
 	},
+}
+
+// printAppliesOnNextDeploy: variáveis entram no container no deploy. O processo
+// que está rodando segue com os valores antigos até o próximo — a API não
+// reinicia o serviço ao gravar (e, se o redeploy automático estiver ligado, o
+// próximo deploy é justamente esse). Antes a camada de serviço não avisava nada.
+// Em -o json não imprime: o stdout é da saída de máquina.
+func printAppliesOnNextDeploy(layer string) {
+	if getOutputFormat() == ui.FormatJSON {
+		return
+	}
+	if layer == "service" {
+		ui.PrintInfo(fmt.Sprintf("Takes effect on the service's next deploy — run `%s` to apply it now.", redeployHint(shellArg(variablesService))))
+		return
+	}
+	ui.PrintInfo(fmt.Sprintf("Takes effect on the next deploy of each affected service — run `%s` on each to apply it now.", redeployHint("<service>")))
+}
+
+// redeployHint é o `upuai redeploy` que alcança o mesmo serviço e ambiente que o
+// comando de variáveis alcançou: sem repetir -s/-e, quem segue o aviso fora do
+// serviço linkado redeploya outro serviço. (-p não entra: o --project deste
+// comando é o bool da camada de projeto, e o projeto vem sempre do link.)
+// service chega pronto para o shell (valor via shellArg, ou um placeholder).
+func redeployHint(service string) string {
+	hint := "upuai redeploy"
+	if service != "" {
+		hint += " -s " + service
+	}
+	if flagEnvironment != "" {
+		hint += " -e " + shellArg(flagEnvironment)
+	}
+	return hint
+}
+
+// shellArg deixa um valor pronto para colar no shell: aspas simples só quando há
+// caractere fora de [A-Za-z0-9._-].
+func shellArg(s string) string {
+	for _, r := range s {
+		if !isShellSafe(r) {
+			return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+		}
+	}
+	return s
+}
+
+func isShellSafe(r rune) bool {
+	return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("._-", r)
 }
 
 var variablesDeleteCmd = &cobra.Command{
@@ -279,6 +324,7 @@ var variablesDeleteCmd = &cobra.Command{
 		}
 
 		ui.PrintSuccess(fmt.Sprintf("Deleted %s", key))
+		printAppliesOnNextDeploy(t.layer)
 		return nil
 	},
 }

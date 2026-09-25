@@ -127,13 +127,26 @@ func ResolveProvider(explicit, detected string) (string, error) {
 	}
 }
 
-// NormalizeRootDir reduz expressões equivalentes à raiz pra "" — formato que a
-// UI grava. Também tira "./" no começo pra paridade com o file picker.
+// NormalizeRootDir devolve a forma canônica do Root Directory — a mesma que a
+// API grava (upuai-web normalizeRootDirectory). Três estados distintos:
+//   - ""        não configurado (o build decide; num monorepo pnpm, FALHA);
+//   - "."       raiz do repo explícita ("." "./" "/" viram "."): o monorepo que
+//     builda da raiz. Antes virava "" — e `upuai config set --root-dir .` nem
+//     chegava a mandar nada (omitempty), sem erro;
+//   - "apps/x"  subdiretório, sem "./", barras nas pontas nem segmentos vazios.
 func NormalizeRootDir(s string) string {
 	s = strings.TrimSpace(s)
-	if s == "" || s == "." || s == "/" || s == "./" {
+	if s == "" {
 		return ""
 	}
-	s = strings.TrimPrefix(s, "./")
-	return s
+	var segs []string
+	for _, seg := range strings.Split(s, "/") {
+		if seg != "" && seg != "." {
+			segs = append(segs, seg)
+		}
+	}
+	if len(segs) == 0 {
+		return "."
+	}
+	return strings.Join(segs, "/")
 }

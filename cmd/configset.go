@@ -26,13 +26,17 @@ var configSetCmd = &cobra.Command{
 	Long: `Update build and deploy configuration for the linked service instance.
 
 For monorepos, set the build Root Directory with --root-dir (e.g. apps/api) on an
-existing github/gitlab service — no need to recreate it. Changing repo/branch is a
-source-identity change and goes through a separate flow (re-add the source).
+existing github/gitlab service — no need to recreate it. Use --root-dir . to build
+from the repository root; a Dockerfile outside the root also needs its path, e.g.
+--root-dir . --dockerfile-path apps/api/Dockerfile builds apps/api's Dockerfile
+with the whole repository as context. Changing repo/branch is a source-identity
+change and goes through a separate flow (re-add the source).
 
 Examples:
   upuai config set --builder dockerfile --dockerfile-path apps/api/Dockerfile
   upuai config set --build-command "pnpm install && pnpm build" --start-command "node dist/server.js"
   upuai config set --root-dir apps/api
+  upuai config set --root-dir . --dockerfile-path apps/api/Dockerfile
   upuai config set --root-dir apps/web --health-check /health`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := requireAuth(); err != nil {
@@ -217,7 +221,7 @@ image is at .config.source.image.`,
 }
 
 func init() {
-	configSetCmd.Flags().StringVar(&flagConfigRootDir, "root-dir", "", "Root directory within the repo (for monorepos)")
+	configSetCmd.Flags().StringVar(&flagConfigRootDir, "root-dir", "", "Root directory within the repo (for monorepos, e.g. apps/api; . builds from the repo root)")
 	configSetCmd.Flags().StringVar(&flagConfigBuilder, "builder", "", "Build system: dockerfile or railpack")
 	configSetCmd.Flags().StringVar(&flagConfigDockerfilePath, "dockerfile-path", "", "Path to Dockerfile (used with --builder dockerfile)")
 	configSetCmd.Flags().StringVar(&flagConfigBuildCommand, "build-command", "", "Command to build the service")

@@ -445,7 +445,7 @@ func init() {
 	addCmd.Flags().StringVar(&flagAddImage, "image", "", "Docker image to deploy (e.g. nginx:latest) — sets type to docker_image")
 	addCmd.Flags().StringVar(&flagAddRepo, "repo", "", "Git repo as 'owner/repo' ou URL (github.com/gitlab.com) — o tipo é detectado pelo host; --type força github|gitlab")
 	addCmd.Flags().StringVar(&flagAddBranch, "branch", "main", "Git branch (used with --repo, default: main)")
-	addCmd.Flags().StringVar(&flagAddRootDir, "root-dir", "", "Root directory within the repo (for monorepos, e.g. apps/api)")
+	addCmd.Flags().StringVar(&flagAddRootDir, "root-dir", "", "Root directory within the repo (for monorepos, e.g. apps/api; . builds from the repo root)")
 	addCmd.Flags().StringVar(&flagAddBuilder, "builder", "", "Build system: dockerfile or railpack")
 	addCmd.Flags().StringVar(&flagAddDockerfilePath, "dockerfile-path", "", "Path to Dockerfile (used with --builder dockerfile)")
 	addCmd.Flags().StringVar(&flagAddStartCommand, "start-command", "", "Command to start the service")

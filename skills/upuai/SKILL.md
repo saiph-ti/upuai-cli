@@ -142,7 +142,7 @@ upuai up --wait --yes -o json
 - `--name <slug>` — kebab-case project slug. **Required when `--yes` is set.**
 - `--repo <owner>/<repo>` — creates a repo-backed service. **GitHub and GitLab are both supported** — the provider is auto-detected from the URL/host. URLs (`https://github.com/owner/repo[.git]`, `git@github.com:owner/repo`, GitLab equivalents) are normalized to `owner/repo`. If you also pass `--type`, it must be `github` or `gitlab` to match the detected provider. Same auto-detect applies to `upuai add --repo <url>`.
 - `--branch <name>` — git branch (default `main`).
-- `--root-dir <path>` — subdirectory within the repo for monorepos (e.g. `apps/api`).
+- `--root-dir <path>` — subdirectory within the repo for monorepos (e.g. `apps/api`), or `.` to build from the repo root (a Dockerfile outside the root also needs `--dockerfile-path`, e.g. `--root-dir . --dockerfile-path apps/api/Dockerfile`). On a push, a service with a subdirectory redeploys when the push changes a file inside it or outside every sibling service's root dir (shared packages, lockfile); a repo-root service redeploys on every push.
 - `--image <ref>` — creates a `docker_image`-type service; mutually exclusive with `--repo`.
 - `--framework <name>` — one of `Next.js`, `Vite`, `React`, `Node.js`, `Go`, `Django`, `Flask`, `Python`, `Rails`, `Docker`, `Static`. **Required when `--yes` is set and the CLI cannot auto-detect.** When in doubt, ask the user — a repo with both `Dockerfile` and `next.config.js` could go either way.
 
@@ -195,7 +195,7 @@ upuai restart --yes                 # restart service (clears in-memory state)
 upuai rollback --list               # list deployments for rollback
 upuai rollback --to <deploy-id> --yes
 upuai config show                   # inspect builder/commands/health/root-dir
-upuai config set --root-dir apps/api  # set monorepo build Root Directory on an existing github/gitlab service
+upuai config set --root-dir apps/api  # set monorepo build Root Directory on an existing github/gitlab service (`.` = repo root)
 upuai service delete <name> --yes   # delete ONE service (deployments+volumes+buckets+domains) — NOT the whole project
 ```
 

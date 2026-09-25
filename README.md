@@ -152,7 +152,7 @@ See [Workspaces](#workspaces) for how linked directories pin their workspace.
 | `shell` | Open a **local** subshell with service environment variables injected |
 | `ssh` | Open an interactive shell (or run a command) **inside the running container** — `upuai ssh -s api -- bin/rails console`. Auto-allocates a PTY when stdin/stdout are terminals; in a pipe/redirect it runs non-interactively with byte-exact stdout/stderr (`echo x \| upuai ssh -- cat`). Force with `-t/--tty`, disable with `-T/--no-tty`. `--process <name>` targets one process of a multi-process service. Generic/stack-agnostic; backed by a K8s exec |
 | `config show` | Show the current source (image, or repository and branch) and build/deploy config of the linked service (builder, build/start commands, health check, root directory). `-o json` exposes the image at `.config.source.image`. Alias: `config get` |
-| `config set` | Update build/deploy config. `--root-dir apps/api` sets the build **Root Directory** for a monorepo on an existing github/gitlab service (no recreate needed); also `--builder`, `--dockerfile-path`, `--build-command`, `--start-command`, `--health-check` |
+| `config set` | Update build/deploy config. `--root-dir apps/api` sets the build **Root Directory** for a monorepo on an existing github/gitlab service (no recreate needed; `--root-dir .` builds from the repo root); also `--builder`, `--dockerfile-path`, `--build-command`, `--start-command`, `--health-check` |
 | `service delete <name>` | Delete **a single service** (and its deployments, volumes, bucket attachments, cluster workloads, domains) without touching the rest of the project. Teardown runs in the background; the service is restorable for 30 days (volumes are not). `-y` skips confirmation. Contrast with `upuai delete` (whole project) and `upuai down` (stop the deployment, keep the service) |
 
 ### Database
@@ -416,7 +416,7 @@ Flag reference:
 - `--framework` — one of `Next.js`, `Vite`, `React`, `Node.js`, `Go`, `Django`, `Flask`, `Python`, `Rails`, `Docker`, `Static`. Required when `--yes` is set and the CLI cannot auto-detect.
 - `--repo` — `owner/repo` short form or a full GitHub **or** GitLab URL (auto-detected and normalized). Creates a `github`- or `gitlab`-type service with source. If you also pass `--type`, it must be `github` or `gitlab` to match the URL. Mutually exclusive with `--image`.
 - `--branch` — git branch (default `main`).
-- `--root-dir` — subdirectory within the repo for monorepos.
+- `--root-dir` — subdirectory within the repo for monorepos, or `.` to build from the repo root. A push redeploys the service when it changes a file inside that directory or outside every sibling service's directory (shared packages, lockfile).
 - `--image` — Docker image reference. Creates a `docker_image`-type service.
 
 Without `--repo` / `--image`, the service is type `empty` and cannot be deployed until you attach a source via `upuai add --type github ...` or the dashboard.

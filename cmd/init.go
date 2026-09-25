@@ -279,7 +279,7 @@ func init() {
 	initCmd.Flags().StringVar(&flagInitFramework, "framework", "", "Framework name (skips detection)")
 	initCmd.Flags().StringVar(&flagInitRepo, "repo", "", "Git repo as 'owner/repo' ou URL (github.com/gitlab.com) — o tipo é detectado pelo host")
 	initCmd.Flags().StringVar(&flagInitBranch, "branch", "", "Git branch (used with --repo, default: main)")
-	initCmd.Flags().StringVar(&flagInitRootDir, "root-dir", "", "Root directory within the repo (for monorepos, e.g. apps/api)")
+	initCmd.Flags().StringVar(&flagInitRootDir, "root-dir", "", "Root directory within the repo (for monorepos, e.g. apps/api; . builds from the repo root)")
 	initCmd.Flags().StringVar(&flagInitImage, "image", "", "Docker image to deploy (e.g. nginx:1.27) — creates a docker_image-type service; mutually exclusive with --repo")
 	rootCmd.AddCommand(initCmd)
 }

@@ -144,7 +144,7 @@ func runSharedBinding(bound bool, keys []string) error {
 		}
 		ui.PrintSuccess(fmt.Sprintf("%s %s [%s]", verb, match.Key, match.Origin))
 	}
-	ui.PrintInfo("Redeploy the service to apply these changes.")
+	printAppliesOnNextDeploy("service")
 	return nil
 }
 
