@@ -23,6 +23,7 @@ func TestParseSSHArgs(t *testing.T) {
 		wantSvcRef  string
 		wantProcess string
 		wantTTY     *bool // nil = auto (nenhum -t/-T)
+		wantNoStdin bool
 		wantCommand []string
 		wantHelp    bool
 		wantProject string
@@ -120,6 +121,25 @@ func TestParseSSHArgs(t *testing.T) {
 			wantCommand: []string{"rails", "-t"},
 		},
 		{
+			name:        "-n before the command",
+			args:        []string{"-s", "api", "-n", "--", "php", "artisan", "migrate"},
+			wantSvcRef:  "api",
+			wantNoStdin: true,
+			wantCommand: []string{"php", "artisan", "migrate"},
+		},
+		{
+			name:        "--no-stdin long form, no separator",
+			args:        []string{"--no-stdin", "ls"},
+			wantNoStdin: true,
+			wantCommand: []string{"ls"},
+		},
+		{
+			// -n depois do comando é do programa remoto, não do upuai.
+			name:        "remote -n preserved",
+			args:        []string{"--", "head", "-n", "5", "log.txt"},
+			wantCommand: []string{"head", "-n", "5", "log.txt"},
+		},
+		{
 			name:     "help short",
 			args:     []string{"-h"},
 			wantHelp: true,
@@ -128,27 +148,30 @@ func TestParseSSHArgs(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			resetLeadingFlagGlobals()
-			ref, process, ttyOverride, cmd, help, err := parseSSHArgs(tc.args)
+			opts, err := parseSSHArgs(tc.args)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if help != tc.wantHelp {
-				t.Fatalf("help = %v, want %v", help, tc.wantHelp)
+			if opts.showHelp != tc.wantHelp {
+				t.Fatalf("help = %v, want %v", opts.showHelp, tc.wantHelp)
 			}
 			if tc.wantHelp {
 				return
 			}
-			if ref != tc.wantSvcRef {
-				t.Errorf("serviceRef = %q, want %q", ref, tc.wantSvcRef)
+			if opts.serviceRef != tc.wantSvcRef {
+				t.Errorf("serviceRef = %q, want %q", opts.serviceRef, tc.wantSvcRef)
 			}
-			if process != tc.wantProcess {
-				t.Errorf("process = %q, want %q", process, tc.wantProcess)
+			if opts.process != tc.wantProcess {
+				t.Errorf("process = %q, want %q", opts.process, tc.wantProcess)
 			}
-			if !reflect.DeepEqual(ttyOverride, tc.wantTTY) {
-				t.Errorf("ttyOverride = %v, want %v", ttyOverride, tc.wantTTY)
+			if !reflect.DeepEqual(opts.tty, tc.wantTTY) {
+				t.Errorf("tty = %v, want %v", opts.tty, tc.wantTTY)
 			}
-			if !reflect.DeepEqual(cmd, tc.wantCommand) {
-				t.Errorf("command = %#v, want %#v", cmd, tc.wantCommand)
+			if opts.noStdin != tc.wantNoStdin {
+				t.Errorf("noStdin = %v, want %v", opts.noStdin, tc.wantNoStdin)
+			}
+			if !reflect.DeepEqual(opts.command, tc.wantCommand) {
+				t.Errorf("command = %#v, want %#v", opts.command, tc.wantCommand)
 			}
 			if flagProject != tc.wantProject {
 				t.Errorf("flagProject = %q, want %q", flagProject, tc.wantProject)
@@ -162,11 +185,51 @@ func TestParseSSHArgs(t *testing.T) {
 
 func TestParseSSHArgs_MissingFlagValue(t *testing.T) {
 	resetLeadingFlagGlobals()
-	if _, _, _, _, _, err := parseSSHArgs([]string{"-s"}); err == nil {
+	if _, err := parseSSHArgs([]string{"-s"}); err == nil {
 		t.Fatal("expected error for -s without a value")
 	}
-	if _, _, _, _, _, err := parseSSHArgs([]string{"--process"}); err == nil {
+	if _, err := parseSSHArgs([]string{"--process"}); err == nil {
 		t.Fatal("expected error for --process without a value")
+	}
+}
+
+// resolveExecStreams é a negociação PTY/stdin. Cada linha é um ambiente real.
+func TestResolveExecStreams(t *testing.T) {
+	yes, no := true, false
+	cases := []struct {
+		name                       string
+		opts                       sshOptions
+		stdinTerm, stdoutTerm, inp bool
+		wantTTY, wantStdin         bool
+	}{
+		{name: "terminal interativo", stdinTerm: true, stdoutTerm: true, wantTTY: true, wantStdin: true},
+		{name: "agente/CI: stdin /dev/null, stdout capturado", wantTTY: false, wantStdin: false},
+		{name: "pipe na entrada", inp: true, wantTTY: false, wantStdin: true},
+		{name: "terminal com stdout redirecionado", stdinTerm: true, wantTTY: false, wantStdin: false},
+		{name: "-t força PTY sobre pipe", opts: sshOptions{tty: &yes}, inp: true, wantTTY: true, wantStdin: true},
+		{name: "-T num terminal", opts: sshOptions{tty: &no}, stdinTerm: true, stdoutTerm: true, wantTTY: false, wantStdin: false},
+		{name: "-n ignora o pipe aberto", opts: sshOptions{noStdin: true, command: []string{"ls"}}, inp: true, wantTTY: false, wantStdin: false},
+		{name: "-n num terminal não aloca PTY", opts: sshOptions{noStdin: true, command: []string{"ls"}}, stdinTerm: true, stdoutTerm: true, wantTTY: false, wantStdin: false},
+		{name: "-n com -T", opts: sshOptions{noStdin: true, tty: &no, command: []string{"ls"}}, inp: true, wantTTY: false, wantStdin: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tty, stdin, err := resolveExecStreams(tc.opts, tc.stdinTerm, tc.stdoutTerm, tc.inp)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tty != tc.wantTTY || stdin != tc.wantStdin {
+				t.Errorf("tty=%v stdin=%v, want tty=%v stdin=%v", tty, stdin, tc.wantTTY, tc.wantStdin)
+			}
+		})
+	}
+
+	if _, _, err := resolveExecStreams(sshOptions{noStdin: true, tty: &yes, command: []string{"ls"}}, true, true, false); err == nil {
+		t.Error("-n with -t: expected an error, a PTY session reads from stdin")
+	}
+	// Sem comando roda um shell, que sem stdin sai na hora com código 0.
+	if _, _, err := resolveExecStreams(sshOptions{noStdin: true}, true, true, false); err == nil {
+		t.Error("-n without a command: expected an error")
 	}
 }
 
