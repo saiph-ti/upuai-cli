@@ -1,6 +1,100 @@
 package cmd
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+
+	"github.com/upuai-cloud/cli/internal/api"
+)
+
+// --secret é tri-estado no wire: ausente não manda o campo (a API preserva o que
+// a variável já é), true marca, false desmarca. Mandar false por default
+// desmascararia todo secret cujo valor fosse trocado sem repetir a flag.
+func TestBuildVariableInputs_SecretOnTheWire(t *testing.T) {
+	yes, no := true, false
+	cases := []struct {
+		name   string
+		secret *bool
+		want   string
+	}{
+		{"flag ausente omite o campo", nil, `{"key":"API_KEY","value":"v"}`},
+		{"--secret marca", &yes, `{"key":"API_KEY","value":"v","isSecret":true}`},
+		{"--secret=false desmarca", &no, `{"key":"API_KEY","value":"v","isSecret":false}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			vars, err := buildVariableInputs([]string{"API_KEY=v"}, "", tc.secret)
+			if err != nil {
+				t.Fatalf("buildVariableInputs: %v", err)
+			}
+			got, err := json.Marshal(vars[0])
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			if string(got) != tc.want {
+				t.Errorf("payload = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestBuildVariableInputs(t *testing.T) {
+	yes := true
+	vars, err := buildVariableInputs([]string{"A=1", "B=x=y"}, "RUNTIME", &yes)
+	if err != nil {
+		t.Fatalf("buildVariableInputs: %v", err)
+	}
+	if len(vars) != 2 || vars[0].Key != "A" || vars[1].Key != "B" || vars[1].Value != "x=y" {
+		t.Fatalf("unexpected vars: %+v", vars)
+	}
+	for _, v := range vars {
+		if v.Scope != "RUNTIME" || v.IsSecret == nil || !*v.IsSecret {
+			t.Errorf("%s: scope/secret not applied to every variable: %+v", v.Key, v)
+		}
+	}
+
+	for name, args := range map[string][]string{
+		"sem =":           {"NOVALUE"},
+		"chave duplicada": {"A=1", "A=2"},
+	} {
+		if _, err := buildVariableInputs(args, "", nil); err == nil {
+			t.Errorf("%s: expected an error for %v", name, args)
+		}
+	}
+}
+
+func TestSetVariableMessage(t *testing.T) {
+	yes, no := true, false
+	cases := []struct {
+		name string
+		in   api.VariableInput
+		want string
+	}{
+		{"simples", api.VariableInput{Key: "A"}, "Set A [service]"},
+		{"scope both não aparece", api.VariableInput{Key: "A", Scope: "BOTH"}, "Set A [service]"},
+		{"scope", api.VariableInput{Key: "A", Scope: "BUILD"}, "Set A (scope: build) [service]"},
+		{"secret", api.VariableInput{Key: "A", IsSecret: &yes}, "Set A (secret) [service]"},
+		{"desmarcado", api.VariableInput{Key: "A", IsSecret: &no}, "Set A (not secret) [service]"},
+		{"secret e scope", api.VariableInput{Key: "A", IsSecret: &yes, Scope: "RUNTIME"}, "Set A (secret, scope: runtime) [service]"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := setVariableMessage(tc.in, "service"); got != tc.want {
+				t.Errorf("setVariableMessage = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// O valor de um secret nunca aparece no output do `set`.
+func TestSetVariableMessage_NeverEchoesTheValue(t *testing.T) {
+	yes := true
+	msg := setVariableMessage(api.VariableInput{Key: "API_KEY", Value: "s3cr3t-value", IsSecret: &yes}, "service")
+	if strings.Contains(msg, "s3cr3t-value") {
+		t.Errorf("message leaks the value: %q", msg)
+	}
+}
 
 // O aviso de "vale no próximo deploy" sugere um `upuai redeploy` que alcança o
 // mesmo serviço e ambiente do comando de variáveis — sem -s/-e, quem o segue de

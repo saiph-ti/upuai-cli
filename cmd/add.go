@@ -260,9 +260,10 @@ Examples:
 		// como secret. A API as converte em imagePullSecret e as remove do
 		// runtime do container (não vazam). Paridade Railway.
 		if flagAddImage != "" && flagAddRegistryUser != "" && flagAddRegistryPassword != "" {
+			secret := true
 			vars := []api.VariableInput{
 				{Key: "DOCKER_REGISTRY_USERNAME", Value: flagAddRegistryUser},
-				{Key: "DOCKER_REGISTRY_PASSWORD", Value: flagAddRegistryPassword, IsSecret: true},
+				{Key: "DOCKER_REGISTRY_PASSWORD", Value: flagAddRegistryPassword, IsSecret: &secret},
 			}
 			if flagAddRegistryHost != "" {
 				vars = append(vars, api.VariableInput{Key: "DOCKER_REGISTRY_HOST", Value: flagAddRegistryHost})

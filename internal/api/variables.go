@@ -36,9 +36,12 @@ func (v *EnvVar) GetScope() string {
 }
 
 type VariableInput struct {
-	Key      string `json:"key"`
-	Value    string `json:"value"`
-	IsSecret bool   `json:"isSecret,omitempty"`
+	Key   string `json:"key"`
+	Value string `json:"value"`
+	// IsSecret é tri-estado: nil omite o campo (a API preserva o que a variável já
+	// é; em variável nova vale false), true marca, false desmarca. Um bool com
+	// omitempty não distingue "não mexe" de "desmarca".
+	IsSecret *bool `json:"isSecret,omitempty"`
 	// Scope: "BOTH" | "RUNTIME" | "BUILD". Vazio = servidor mantém o atual (update)
 	// ou aplica o default BOTH (create).
 	Scope string `json:"scope,omitempty"`

@@ -15,6 +15,7 @@ var (
 	variablesScope   string
 	variablesProject bool
 	variablesShared  bool
+	variablesSecret  bool
 )
 
 // validEnvVarScopes mapeia o input do usuário (case-insensitive) pro valor
@@ -86,7 +87,12 @@ Examples:
   upuai variables set PUBLIC_ID=... --project              # global to the project
   upuai variables set DATABASE_URL=... --scope runtime     # not in build
   upuai variables set NPM_TOKEN=... --scope build          # not in runtime
-  upuai variables delete KEY --shared`,
+  upuai variables set API_KEY=... --secret                 # masked in every listing
+  upuai variables delete KEY --shared
+
+A secret's value is masked in every listing and never returned by the API, so
+"upuai run" / "upuai shell" do not inject it; the running service still receives it. Setting a new value for a variable that is
+already secret keeps it secret; --secret=false unmarks it.`,
 }
 
 var variablesListCmd = &cobra.Command{
@@ -177,22 +183,9 @@ var variablesSetCmd = &cobra.Command{
 			scope = canonical
 		}
 
-		var vars []api.VariableInput
-		seen := map[string]int{}
-		for _, arg := range args {
-			parsed, ok := envparse.ParseSingle(arg)
-			if !ok {
-				return fmt.Errorf("invalid format %q — use KEY=VALUE", arg)
-			}
-			if prev, dup := seen[parsed.Key]; dup {
-				return fmt.Errorf("duplicate key %q (already set at arg %d)", parsed.Key, prev+1)
-			}
-			seen[parsed.Key] = len(vars)
-			vars = append(vars, api.VariableInput{
-				Key:   parsed.Key,
-				Value: parsed.Value,
-				Scope: scope,
-			})
+		vars, err := buildVariableInputs(args, scope, secretFlag(cmd))
+		if err != nil {
+			return err
 		}
 
 		client := api.NewClient()
@@ -221,16 +214,66 @@ var variablesSetCmd = &cobra.Command{
 		}
 
 		for _, v := range vars {
-			suffix := fmt.Sprintf(" [%s]", t.label)
-			if v.Scope != "" && v.Scope != "BOTH" {
-				ui.PrintSuccess(fmt.Sprintf("Set %s (scope: %s)%s", v.Key, strings.ToLower(v.Scope), suffix))
-			} else {
-				ui.PrintSuccess(fmt.Sprintf("Set %s%s", v.Key, suffix))
-			}
+			ui.PrintSuccess(setVariableMessage(v, t.label))
 		}
 		printAppliesOnNextDeploy(t.layer)
 		return nil
 	},
+}
+
+// secretFlag devolve o --secret só quando o usuário o passou: nil = flag ausente
+// (a API preserva o que a variável já é), &true marca, &false (--secret=false)
+// desmarca. O tri-estado é o contrato — mandar false por default desmascararia
+// todo secret cujo valor fosse trocado sem repetir a flag.
+func secretFlag(cmd *cobra.Command) *bool {
+	if !cmd.Flags().Changed("secret") {
+		return nil
+	}
+	v := variablesSecret
+	return &v
+}
+
+// buildVariableInputs converte os args KEY=VALUE no payload da API, aplicando o
+// mesmo scope e a mesma marca de secret a todas as variáveis da chamada.
+func buildVariableInputs(args []string, scope string, secret *bool) ([]api.VariableInput, error) {
+	var vars []api.VariableInput
+	seen := map[string]int{}
+	for _, arg := range args {
+		parsed, ok := envparse.ParseSingle(arg)
+		if !ok {
+			return nil, fmt.Errorf("invalid format %q — use KEY=VALUE", arg)
+		}
+		if prev, dup := seen[parsed.Key]; dup {
+			return nil, fmt.Errorf("duplicate key %q (already set at arg %d)", parsed.Key, prev+1)
+		}
+		seen[parsed.Key] = len(vars)
+		vars = append(vars, api.VariableInput{
+			Key:      parsed.Key,
+			Value:    parsed.Value,
+			IsSecret: secret,
+			Scope:    scope,
+		})
+	}
+	return vars, nil
+}
+
+func setVariableMessage(v api.VariableInput, label string) string {
+	var notes []string
+	if v.IsSecret != nil {
+		if *v.IsSecret {
+			notes = append(notes, "secret")
+		} else {
+			notes = append(notes, "not secret")
+		}
+	}
+	if v.Scope != "" && v.Scope != "BOTH" {
+		notes = append(notes, "scope: "+strings.ToLower(v.Scope))
+	}
+	msg := "Set " + v.Key
+	if len(notes) > 0 {
+		msg += " (" + strings.Join(notes, ", ") + ")"
+	}
+	return fmt.Sprintf("%s [%s]", msg, label)
 }
 
 // printAppliesOnNextDeploy: variáveis entram no container no deploy. O processo
@@ -334,6 +377,7 @@ func init() {
 	variablesCmd.PersistentFlags().BoolVar(&variablesProject, "project", false, "Target project-level variables (global to all environments)")
 	variablesCmd.PersistentFlags().BoolVar(&variablesShared, "shared", false, "Target environment-level variables (shared by all services in the environment)")
 	variablesSetCmd.Flags().StringVar(&variablesScope, "scope", "", "Injection phase: both (default) | runtime (not in build) | build (not in runtime)")
+	variablesSetCmd.Flags().BoolVar(&variablesSecret, "secret", false, "Mark the variables as secret (masked in listings, never returned by the API); --secret=false unmarks")
 	variablesCmd.AddCommand(variablesListCmd)
 	variablesCmd.AddCommand(variablesSetCmd)
 	variablesCmd.AddCommand(variablesDeleteCmd)
