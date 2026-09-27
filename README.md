@@ -150,7 +150,7 @@ See [Workspaces](#workspaces) for how linked directories pin their workspace.
 | `scale` | Scale the service to N replicas (`upuai scale 3`), or individual processes (`upuai scale web=2 worker=1`) |
 | `run` | Run a command **locally** with service environment variables injected |
 | `shell` | Open a **local** subshell with service environment variables injected |
-| `ssh` | Open an interactive shell (or run a command) **inside the running container** — `upuai ssh -s api -- bin/rails console`. Auto-allocates a PTY when stdin/stdout are terminals; in a pipe/redirect it runs non-interactively with byte-exact stdout/stderr (`echo x \| upuai ssh -- cat`). Force with `-t/--tty`, disable with `-T/--no-tty`. `--process <name>` targets one process of a multi-process service. Generic/stack-agnostic; backed by a K8s exec |
+| `ssh` | Open an interactive shell (or run a command) **inside the running container** — `upuai ssh -s api -- bin/rails console`. Auto-allocates a PTY when stdin/stdout are terminals; in a pipe/redirect it runs non-interactively with byte-exact stdout/stderr (`echo x \| upuai ssh -- cat`). Force with `-t/--tty`, disable with `-T/--no-tty`. `--process <name>` targets one process of a multi-process service. `-n/--no-stdin` never attaches stdin (parity with `ssh -n`; needs a command, never allocates a PTY) — use it from CI and agents whose runner leaves stdin open (`upuai ssh -n -- cmd`, or redirect `</dev/null`); a session left waiting on a silent stdin says so on stderr. A session that ends without an exit status is an error, never a silent exit 0. Generic/stack-agnostic; backed by a K8s exec |
 | `config show` | Show the current source (image, or repository and branch) and build/deploy config of the linked service (builder, build/start commands, health check, root directory). `-o json` exposes the image at `.config.source.image`. Alias: `config get` |
 | `config set` | Update build/deploy config. `--root-dir apps/api` sets the build **Root Directory** for a monorepo on an existing github/gitlab service (no recreate needed; `--root-dir .` builds from the repo root); also `--builder`, `--dockerfile-path`, `--build-command`, `--start-command`, `--health-check` |
 | `service delete <name>` | Delete **a single service** (and its deployments, volumes, bucket attachments, cluster workloads, domains) without touching the rest of the project. Teardown runs in the background; the service is restorable for 30 days (volumes are not). `-y` skips confirmation. Contrast with `upuai delete` (whole project) and `upuai down` (stop the deployment, keep the service) |
@@ -190,7 +190,7 @@ See [Workspaces](#workspaces) for how linked directories pin their workspace.
 | Command | Alias | Description |
 |---------|-------|-------------|
 | `variables list` | `vars list` | List all environment variables. `--shared` lists the **environment-level** layer; `--project` the **project-level** (global) layer |
-| `variables set KEY=VALUE...` | `vars set` | Set variables. `--scope both\|runtime\|build` controls injection phase. `--shared` targets the **environment** layer (inherited by every service); `--project` the **project** layer (global to all environments). Default = this service. Precedence on deploy: service > environment > project |
+| `variables set KEY=VALUE...` | `vars set` | Set variables. `--scope both\|runtime\|build` controls injection phase. `--secret` marks them as secret (masked in every listing, never returned by the API); a variable that is already secret stays secret when you set a new value, and `--secret=false` unmarks it. `--shared` targets the **environment** layer (inherited by every service); `--project` the **project** layer (global to all environments). Default = this service. Precedence on deploy: service > environment > project |
 | `variables delete KEY` | `vars delete` | Delete a variable (`--shared`/`--project` for the shared layers) |
 | `variables shared list` | `vars shared list` | **Per service**: list which shared (project/environment) variables are injected (`Enabled`/`Origin`) |
 | `variables shared enable KEY...` | `vars shared enable` | Inject shared variable(s) into this service. `--origin project\|environment` disambiguates a key defined in both layers |
@@ -206,8 +206,9 @@ See [Workspaces](#workspaces) for how linked directories pin their workspace.
 |---------|-------|-------------|
 | `scheduler list` | `cron list` | List scheduled jobs for the service |
 | `scheduler create --name <n> --command <cmd> --schedule "<cron>"` | `cron create` | Create a cron job (runs with the service's deployed image). `--timeout <secs>` optional |
+| `scheduler create --name <n> --command <cmd> --once` | `cron create` | Run a command **once, now**, in a fresh container of the deployed image. A run is killed after `--timeout` seconds (default 300, max 1800). The job has no schedule and never runs on its own; it stays listed (`on demand`) to run again or delete |
 | `scheduler run <name\|id>` | `cron run` | Trigger a one-off run now |
-| `scheduler pause <name\|id>` / `resume` | `cron pause`/`resume` | Pause / resume the schedule |
+| `scheduler pause <name\|id>` / `resume` | `cron pause`/`resume` | Pause / resume the schedule (jobs with a schedule only) |
 | `scheduler delete <name\|id>` | `cron delete` | Delete a scheduled job |
 
 Every service-scoped command accepts `-s/--service <name|slug|id>` to target a service other than the linked one (paridade com `railway variable list -s Postgres`): `variables`, `scheduler`, `ps`, `logs`, `run`, `shell`, `ssh`, `config`, `db`, plus the ones that change state — `deploy`, `up`, `redeploy`, `rollback`, `restart`, `scale`, `down`, `domain`.

@@ -34,10 +34,10 @@ cli/
 │   ├── scale.go               # Escala réplicas do serviço (N global ou web=2 worker=1 por processo)
 │   ├── run.go                 # Executa comando com env vars injetadas (`-s` opcional, `--` opcional; parse manual via DisableFlagParsing)
 │   ├── shell.go               # Subshell interativo com env vars do service (paridade `railway shell`)
-│   ├── ssh.go                 # Sessão DENTRO do container em execução (`-s`, `--`, PTY auto; parse manual via DisableFlagParsing)
+│   ├── ssh.go                 # Sessão DENTRO do container em execução (`-s`, `--`, PTY auto, `-n` sem stdin; parse manual via DisableFlagParsing)
 │   ├── db.go                  # `db connect` (psql interativo) / `db backup` (pg_dump) / `db restore` (pg_restore) — usa endpoint público
 │   ├── configset.go           # `config show|get` e `config set` — build/deploy config do serviço (builder, comandos, health, root-dir)
-│   ├── scheduler.go           # `scheduler` (cron/schedulers) → list, create, run, pause, resume, delete
+│   ├── scheduler.go           # `scheduler` (cron/schedulers) → list, create (`--schedule` ou `--once`), run, pause, resume, delete
 │   ├── environment.go         # Gerencia ambientes (alias: env) — subcommands: list, switch, new, delete
 │   ├── variables.go           # Gerencia env vars (aliases: vars, variable) — subcommands: list, set, delete; flag `-s/--service` em todos
 │   ├── variables_shared.go    # `variables shared` → list/enable/disable: vínculo opt-in de shared vars (projeto/ambiente) por serviço (paridade web "Compartilhadas")
