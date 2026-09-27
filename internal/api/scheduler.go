@@ -3,21 +3,28 @@ package api
 import "fmt"
 
 type ScheduledJob struct {
-	ID             string `json:"id"`
-	ServiceID      string `json:"serviceId"`
-	EnvironmentID  string `json:"environmentId"`
-	Name           string `json:"name"`
-	Command        string `json:"command"`
-	Schedule       string `json:"schedule"`
-	TimeoutSeconds int    `json:"timeoutSeconds"`
-	Status         string `json:"status"`
-	LastRunAt      string `json:"lastRunAt,omitempty"`
+	ID            string `json:"id"`
+	ServiceID     string `json:"serviceId"`
+	EnvironmentID string `json:"environmentId"`
+	Name          string `json:"name"`
+	Command       string `json:"command"`
+	// Schedule nil = job sob demanda: nunca dispara sozinho, só por `scheduler run`.
+	Schedule       *string `json:"schedule"`
+	TimeoutSeconds int     `json:"timeoutSeconds"`
+	Status         string  `json:"status"`
+	LastRunAt      string  `json:"lastRunAt,omitempty"`
+}
+
+// OnDemand diz se o job não tem agendamento (só roda quando disparado).
+func (j *ScheduledJob) OnDemand() bool {
+	return j.Schedule == nil || *j.Schedule == ""
 }
 
 type CreateScheduledJobRequest struct {
-	Name           string `json:"name"`
-	Command        string `json:"command"`
-	Schedule       string `json:"schedule"`
+	Name    string `json:"name"`
+	Command string `json:"command"`
+	// Schedule vazio cria um job sob demanda.
+	Schedule       string `json:"schedule,omitempty"`
 	TimeoutSeconds int    `json:"timeoutSeconds,omitempty"`
 }
 

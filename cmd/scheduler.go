@@ -15,18 +15,26 @@ var (
 	schedulerCommand string
 	schedulerCron    string
 	schedulerTimeout int
+	schedulerOnce    bool
 )
 
 var schedulerCmd = &cobra.Command{
 	Use:     "scheduler",
 	Aliases: []string{"cron", "schedulers"},
-	Short:   "Manage scheduled (cron) jobs",
-	Long: `Manage scheduled jobs that run a command on a cron schedule using the
-service's deployed image (Heroku Scheduler / Railway Cron parity).
+	Short:   "Manage scheduled (cron) and one-off jobs",
+	Long: `Manage jobs that run a command in a fresh container of the service's deployed
+image, with the service's variables (Heroku Scheduler / Railway Cron parity).
+
+A job either has a cron schedule or is on demand: created with --once, it runs a
+single time right away and never on its own. It stays listed, so you can run it
+again with "scheduler run" or remove it with "scheduler delete".
+
+A run is killed after --timeout seconds: 300 by default, 1800 (30 min) at most.
 
 Examples:
   upuai scheduler list
   upuai scheduler create --name nightly --command "rails db:cleanup" --schedule "0 3 * * *"
+  upuai scheduler create --name import --command "php artisan ibge:import" --once
   upuai scheduler run nightly
   upuai scheduler pause nightly
   upuai scheduler resume nightly
@@ -79,7 +87,7 @@ var schedulerListCmd = &cobra.Command{
 		fmt.Println()
 		table := ui.NewTable("Name", "Schedule", "Command", "Status")
 		for _, j := range jobs {
-			table.AddRow(j.Name, j.Schedule, j.Command, j.Status)
+			table.AddRow(j.Name, scheduleLabel(&j), j.Command, j.Status)
 		}
 		table.Print()
 		fmt.Println()
@@ -87,15 +95,38 @@ var schedulerListCmd = &cobra.Command{
 	},
 }
 
+// scheduleLabel é o agendamento como aparece na tabela.
+func scheduleLabel(j *api.ScheduledJob) string {
+	if j.OnDemand() {
+		return "on demand"
+	}
+	return *j.Schedule
+}
+
+// validateSchedulerCreate confere as flags do `scheduler create`: nome e comando
+// sempre, e exatamente um entre --schedule (cron) e --once (roda uma vez, agora).
+func validateSchedulerCreate(name, command, schedule string, once bool) error {
+	if name == "" || command == "" {
+		return fmt.Errorf("--name and --command are required")
+	}
+	if schedule != "" && once {
+		return fmt.Errorf("use only one of --schedule or --once")
+	}
+	if schedule == "" && !once {
+		return fmt.Errorf("--schedule is required — or pass --once to run the command a single time, now")
+	}
+	return nil
+}
+
 var schedulerCreateCmd = &cobra.Command{
 	Use:   "create",
-	Short: "Create a scheduled job",
+	Short: "Create a scheduled job, or run a command once (--once)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := requireAuth(); err != nil {
 			return err
 		}
-		if schedulerName == "" || schedulerCommand == "" || schedulerCron == "" {
-			return fmt.Errorf("--name, --command and --schedule are required")
+		if err := validateSchedulerCreate(schedulerName, schedulerCommand, schedulerCron, schedulerOnce); err != nil {
+			return err
 		}
 		envID, serviceID, err := resolveServiceContext(schedulerService)
 		if err != nil {
@@ -116,11 +147,29 @@ var schedulerCreateCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to create scheduled job: %w", err)
 		}
+		if schedulerOnce {
+			err = ui.RunWithSpinner("Triggering run...", func() error {
+				ran, e := client.RunScheduledJob(envID, serviceID, job.ID)
+				if e == nil {
+					job = ran
+				}
+				return e
+			})
+			if err != nil {
+				// O job existe: repetir o create daria conflito de nome.
+				return fmt.Errorf("job %s was created but its run did not start — retry with `upuai scheduler run %s`: %w", job.Name, shellArg(job.Name), err)
+			}
+		}
 		if getOutputFormat() == ui.FormatJSON {
 			ui.PrintJSON(job)
 			return nil
 		}
-		ui.PrintSuccess(fmt.Sprintf("Scheduled job %s created (%s)", job.Name, job.Schedule))
+		if schedulerOnce {
+			ui.PrintSuccess(fmt.Sprintf("Job %s created and triggered — it runs once, never on its own", job.Name))
+			ui.PrintInfo(fmt.Sprintf("Run it again with `upuai scheduler run %s`; remove it with `upuai scheduler delete %s`.", shellArg(job.Name), shellArg(job.Name)))
+			return nil
+		}
+		ui.PrintSuccess(fmt.Sprintf("Scheduled job %s created (%s)", job.Name, scheduleLabel(job)))
 		return nil
 	},
 }
@@ -236,6 +285,7 @@ func init() {
 	schedulerCreateCmd.Flags().StringVar(&schedulerCommand, "command", "", "Command to run")
 	schedulerCreateCmd.Flags().StringVar(&schedulerCron, "schedule", "", "Cron expression (e.g. \"0 3 * * *\") or @shortcut")
 	schedulerCreateCmd.Flags().IntVar(&schedulerTimeout, "timeout", 0, "Max run duration in seconds (10-1800, default 300)")
+	schedulerCreateCmd.Flags().BoolVar(&schedulerOnce, "once", false, "No schedule: run the command a single time, now (the job never runs on its own)")
 	schedulerCmd.AddCommand(schedulerListCmd)
 	schedulerCmd.AddCommand(schedulerCreateCmd)
 	schedulerCmd.AddCommand(schedulerRunCmd)
