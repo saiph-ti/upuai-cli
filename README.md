@@ -623,7 +623,7 @@ upuai db update --yes --wait          # Apply the maintenance update and wait
 
 `db connect` requires `psql` on `$PATH`; `db backup` / `db restore` require `pg_dump` / `pg_restore` (postgresql-client / libpq). Public access is auto-prompted when disabled — confirm or pass `--enable`.
 
-Extensions are managed in the `app` database (the one in `DATABASE_URL`) from a curated list; the platform's current Postgres image ships PostGIS, pgvector and 25+ others, so enabling one never restarts the database. A database still on an older image shows extensions such as PostGIS as `unavailable` — run `upuai db update` (one restart) first. Other extensions or databases remain available over SQL with the database's own credentials.
+Extensions are managed in the `app` database (the one in `DATABASE_URL`) from a curated list; the platform's current Postgres image ships PostGIS, pgvector and 25+ others, so enabling one never restarts the database. A database still on an older image shows extensions such as PostGIS as `unavailable` — run `upuai db update` (one restart) first. Your app's migrations can also run `CREATE EXTENSION IF NOT EXISTS postgis;` (the `DATABASE_URL` user owns the `app` database) — the dashboard and `db extensions` show it either way. Extensions that need `shared_preload_libraries` (pg_cron, pg_stat_statements, pgaudit) are not offered; other databases remain available over SQL with the database's own credentials.
 
 ### environment
 

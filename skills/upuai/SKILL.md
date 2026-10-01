@@ -1,7 +1,7 @@
 ---
 name: upuai
 description: Deploy, manage, and troubleshoot projects on Upuai Cloud using the upuai CLI. Route-first skill — read the routing table below and follow the matching section.
-version: 1.2.0
+version: 1.2.1
 when-to-use: When the user wants to deploy a project to Upuai, check status/logs, configure env vars or domains, manage databases, roll back, promote between environments, or use the upuai CLI for any task.
 homepage: https://upuai.com.br
 ---
@@ -310,13 +310,22 @@ upuai db version -o json               # {engine, version, updateAvailable}
 upuai db update --yes --wait           # apply the maintenance update (restarts the DB ~1–2 min); --wait-timeout defaults to 900 s
 ```
 
-**Extensions (PostGIS, pgvector, ...)**: the platform's current Postgres image ships them; enabling is a
-`CREATE EXTENSION` in the `app` database and never restarts anything. If `db extensions`
-shows the one you need as `unavailable`, the database runs an older image: run
-`upuai db update --yes --wait` first (one restart, same major version), then enable it.
-`disable` never cascades — when it is refused, the error lists what depends on the extension.
-Prefer these commands over hand-written `CREATE EXTENSION` so the state shows in the
-dashboard (CLI v0.26.0+).
+**Extensions (PostGIS, pgvector, ...)**: the platform's current Postgres image ships them (PostGIS,
+pgvector, pg_trgm, unaccent, citext, uuid-ossp, pgcrypto, pgrouting and more); enabling is a
+`CREATE EXTENSION` in the `app` database and never restarts anything. Two equivalent ways — the
+dashboard shows both, it reads the live database:
+- `upuai db extensions enable <name>` (CLI v0.26.0+), or
+- the app's own migration: `CREATE EXTENSION IF NOT EXISTS postgis;` works because the
+  `DATABASE_URL` user owns the `app` database. Prefer this when the app depends on the
+  extension — new environments and clones start from an empty database.
+
+If `db extensions` shows the one you need as `unavailable`, the database runs an older image:
+tell the user it restarts for ~1–2 min, run `upuai db update --yes --wait` (same major version,
+data preserved), then enable it. Never build a custom Postgres image or run Postgres inside an
+app container to get an extension. Not offered: extensions that need `shared_preload_libraries`
+(pg_cron, pg_stat_statements, pgaudit). `disable` never cascades — when it is refused, the error
+lists what depends on the extension. An older CLI prints the `upuai db` help (exit 0) instead of
+running `db extensions` / `db version` / `db update` — run `upuai upgrade`.
 
 ### Volumes
 
