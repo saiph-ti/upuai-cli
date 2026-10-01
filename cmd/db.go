@@ -13,6 +13,7 @@ import (
 	"github.com/upuai-cloud/cli/internal/api"
 	"github.com/upuai-cloud/cli/internal/config"
 	"github.com/upuai-cloud/cli/internal/ui"
+	"golang.org/x/term"
 )
 
 // `upuai db ...` wraps the Public DB Endpoint feature so customers can
@@ -43,7 +44,7 @@ const databaseServiceType = "database"
 var dbCmd = &cobra.Command{
 	Use:     "db",
 	Aliases: []string{"database"},
-	Short:   "Manage the linked database (connect, backup, restore)",
+	Short:   "Manage the linked database (connect, backup, restore, extensions, updates)",
 	Long: `Manage the linked database service.
 
 Examples:
@@ -53,7 +54,11 @@ Examples:
   upuai db restore -f file.dump     Restore a dump via pg_restore
   upuai db public                   Show the public endpoint and who may connect
   upuai db public enable --allow IP Publish restricted to one origin
-  upuai db public disable           Remove the public endpoint`,
+  upuai db public disable           Remove the public endpoint
+  upuai db extensions               List managed Postgres extensions (PostGIS, pgvector, ...)
+  upuai db extensions enable postgis  Enable an extension (instant, no restart)
+  upuai db version                  Show the running version and pending updates
+  upuai db update --wait            Apply the pending maintenance update (restarts the database)`,
 }
 
 var dbConnectCmd = &cobra.Command{
@@ -196,14 +201,14 @@ to drop+recreate matching objects.`,
 }
 
 // stdinIsTerminal reports whether stdin is an interactive terminal. Used to
-// avoid interactive prompts (which open /dev/tty) in scripts/pipes. Dependency-
-// free via the char-device bit — same check used by the spinner.
+// avoid interactive prompts (which open /dev/tty) in scripts/pipes.
+//
+// term.IsTerminal (ioctl) em vez do bit de char device: /dev/null também é
+// char device, então `upuai db ... < /dev/null` (CI, agentes, cron) passava por
+// "terminal", caía no prompt e morria com "could not open a new TTY" em vez do
+// erro acionável. Mesma checagem do `ssh`.
 func stdinIsTerminal() bool {
-	fi, err := os.Stdin.Stat()
-	if err != nil {
-		return false
-	}
-	return (fi.Mode() & os.ModeCharDevice) != 0
+	return term.IsTerminal(int(os.Stdin.Fd()))
 }
 
 // loadOrEnablePublicAccess fetches the current state and offers to enable it

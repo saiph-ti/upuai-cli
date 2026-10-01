@@ -53,3 +53,30 @@ func TestMatchProjectRefAmbiguous(t *testing.T) {
 		}
 	}
 }
+
+func TestTopLevelCommandName(t *testing.T) {
+	tests := []struct {
+		args []string
+		want string
+	}{
+		{[]string{"version"}, "version"},
+		{[]string{"db", "version"}, "db"},
+		{[]string{"db", "extensions", "enable", "postgis"}, "db"},
+		{[]string{"skill", "install"}, "skill"},
+		{[]string{}, "upuai"},
+	}
+	for _, tc := range tests {
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			cmd, _, err := rootCmd.Find(tc.args)
+			if err != nil {
+				t.Fatalf("Find(%v): %v", tc.args, err)
+			}
+			if got := topLevelCommandName(cmd); got != tc.want {
+				t.Fatalf("topLevelCommandName(%v) = %q, want %q", tc.args, got, tc.want)
+			}
+		})
+	}
+	if got := topLevelCommandName(nil); got != "" {
+		t.Fatalf("topLevelCommandName(nil) = %q, want empty", got)
+	}
+}

@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -114,21 +116,62 @@ func (c *Client) parseError(resp *http.Response) error {
 				apiErr.Message = parsed.Error
 			}
 			apiErr.Code = parsed.Code
-			apiErr.RequestID = parsed.RequestID
-			// `details` da API é Record<string, unknown> | string[]. Decode
-			// best-effort no shape comum (validação Zod = {campo: "msg"}); shapes
-			// com valores não-string (ex: PlanLimit {current, limit}) ou array são
-			// ignorados sem perder message/requestId. RawMessage garante que o
-			// parse acima nunca falhe por causa do shape de details.
-			if len(parsed.Details) > 0 {
-				var d map[string]string
-				if json.Unmarshal(parsed.Details, &d) == nil {
-					apiErr.Details = d
-				}
+			// A API tem DOIS envelopes de erro estável: o catálogo geral manda o
+			// código em `code` (ex: NOT_A_MEMBER), e os códigos de cluster/banco
+			// (throwAppError — ex: DB_EXTENSION_IN_USE) vêm em `error`, sem `code`.
+			// `error` também carrega o classname legado (ValidationError,
+			// ConflictError), que NÃO é código — por isso só o formato
+			// UPPER_SNAKE é promovido.
+			if apiErr.Code == "" && stableErrorCode.MatchString(parsed.Error) {
+				apiErr.Code = parsed.Error
 			}
+			apiErr.RequestID = parsed.RequestID
+			apiErr.Details = decodeDetails(parsed.Details)
 		}
 	}
 	return apiErr
+}
+
+// stableErrorCode reconhece um código de catálogo (UPPER_SNAKE) em `error`.
+var stableErrorCode = regexp.MustCompile(`^[A-Z][A-Z0-9]*(_[A-Z0-9]+)+$`)
+
+// detailsMetaKeys são metadados de classificação que a API anexa a todo erro de
+// cluster (throwAppError) — úteis pra máquina, ruído na mensagem pro humano.
+var detailsMetaKeys = map[string]bool{"actionable": true, "retryable": true}
+
+// decodeDetails lê `details` (Record<string, unknown> | string[]) chave a chave:
+// strings, números e booleanos viram texto; objetos, arrays e os metadados de
+// classificação são ignorados. Antes o decode era all-or-nothing em
+// map[string]string — um único valor não-string (os booleanos actionable/
+// retryable dos erros de cluster, os números de PlanLimit) descartava o mapa
+// inteiro, inclusive o `dependents` que explica por que a extensão não sai.
+// Nunca falha: details malformado não pode custar message/requestId.
+func decodeDetails(raw json.RawMessage) map[string]string {
+	if len(raw) == 0 {
+		return nil
+	}
+	var m map[string]any
+	if json.Unmarshal(raw, &m) != nil {
+		return nil // string[] ou outro shape — sem detalhe field-level
+	}
+	out := make(map[string]string, len(m))
+	for k, v := range m {
+		if detailsMetaKeys[k] {
+			continue
+		}
+		switch x := v.(type) {
+		case string:
+			out[k] = x
+		case float64:
+			out[k] = strconv.FormatFloat(x, 'f', -1, 64)
+		case bool:
+			out[k] = strconv.FormatBool(x)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func (c *Client) getToken() string {
@@ -208,6 +251,21 @@ func (c *Client) Patch(path string, body any, result any) error {
 
 func (c *Client) Delete(path string) error {
 	return c.doRequest(http.MethodDelete, path, nil, nil, false)
+}
+
+// DeleteJSON é o DELETE cujo corpo de resposta interessa (ex: a lista de
+// extensões depois de um DROP EXTENSION). Delete continua descartando o corpo.
+func (c *Client) DeleteJSON(path string, result any) error {
+	return c.doRequest(http.MethodDelete, path, nil, result, false)
+}
+
+// withTimeout devolve uma cópia do client com outro teto de tempo por request,
+// para chamadas que o servidor sabidamente segura mais que o default de 30s.
+// A cópia compartilha baseURL e credStore (o refresh de token continua valendo).
+func (c *Client) withTimeout(d time.Duration) *Client {
+	clone := *c
+	clone.httpClient = &http.Client{Timeout: d}
+	return &clone
 }
 
 // StreamSSE streams a Server-Sent Events endpoint, invoking onLine for each

@@ -42,10 +42,7 @@ func Execute() error {
 	// prevent us from filtering the update nudge correctly (a 'help' shown
 	// after an unknown flag still returns an error from Execute()).
 	executed, _, _ := rootCmd.Find(os.Args[1:])
-	cmdName := ""
-	if executed != nil {
-		cmdName = executed.Name()
-	}
+	cmdName := topLevelCommandName(executed)
 
 	err := rootCmd.Execute()
 	if err != nil {
@@ -62,6 +59,20 @@ func Execute() error {
 	skillinstall.MaybeEnsure(cmdName)
 
 	return err
+}
+
+// topLevelCommandName returns the name of the top-level command that owns cmd
+// (`db version` → "db", `version` → "version"). The post-run skip lists in
+// updatecheck/skillinstall are keyed on top-level commands; matching on the leaf
+// name made any nested command called "version"/"help" silence the nudges.
+func topLevelCommandName(cmd *cobra.Command) string {
+	if cmd == nil {
+		return ""
+	}
+	for cmd.HasParent() && cmd.Parent() != rootCmd {
+		cmd = cmd.Parent()
+	}
+	return cmd.Name()
 }
 
 func init() {

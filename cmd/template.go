@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/upuai-cloud/cli/internal/api"
@@ -77,7 +76,7 @@ var templateDeployCmd = &cobra.Command{
 	Short: "Deploy a managed database template",
 	Long: `Deploy a managed database. Pass the engine name as the first argument.
 
-Supported engines: postgresql, mysql, redis, mongodb
+Supported engines: postgresql, mysql, redis, mongodb (aliases: postgres, mongo)
 
 Examples:
   upuai template deploy postgresql --name my-db
@@ -116,11 +115,10 @@ Examples:
 			}
 
 			if len(args) > 0 {
-				// Match by engine name
-				engine := strings.ToLower(args[0])
+				// Match by engine name (aceita os aliases curtos postgres/mongo).
 				var matches []api.DatabaseTemplate
 				for _, t := range templates {
-					if strings.ToLower(t.Engine) == engine || strings.EqualFold(t.Name, args[0]) {
+					if templateMatchesEngine(t, args[0]) {
 						matches = append(matches, t)
 					}
 				}

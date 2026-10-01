@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -160,4 +161,30 @@ func TestSetDatabasePublicAccessWire(t *testing.T) {
 	if puts[1].Enabled || puts[1].AllowedCidrs == nil || len(puts[1].AllowedCidrs) != 0 {
 		t.Fatalf("PUT[1] = %+v; quero enabled=false e allowedCidrs=[]", puts[1])
 	}
+}
+
+// /dev/null é char device mas não é terminal: com o bit de char device,
+// `upuai db ... < /dev/null` (CI, agentes) caía no prompt e morria com "could
+// not open a new TTY" em vez do erro acionável pedindo --yes/--enable.
+func TestStdinIsTerminalRejectsDevNull(t *testing.T) {
+	useDevNullStdin(t)
+	if stdinIsTerminal() {
+		t.Fatal("stdinIsTerminal() = true para /dev/null")
+	}
+}
+
+// useDevNullStdin troca o stdin do processo por /dev/null: torna determinístico
+// o caminho não-interativo mesmo quando `go test` roda num terminal.
+func useDevNullStdin(t *testing.T) {
+	t.Helper()
+	devNull, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatalf("open %s: %v", os.DevNull, err)
+	}
+	prev := os.Stdin
+	os.Stdin = devNull
+	t.Cleanup(func() {
+		os.Stdin = prev
+		_ = devNull.Close()
+	})
 }

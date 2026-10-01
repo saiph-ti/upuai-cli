@@ -257,7 +257,13 @@ func runDeploy(projectID, env, serviceID string) error {
 // hits a terminal status or the timeout expires. Prints status transitions to
 // stderr in text mode; stays silent in JSON mode (caller does the rendering).
 func waitForDeployment(client *api.Client, deployID string, format ui.OutputFormat) (*api.Deployment, error) {
-	timeout := time.Duration(deployWaitTimeoutFlag) * time.Second
+	return waitForDeploymentWithin(client, deployID, format, time.Duration(deployWaitTimeoutFlag)*time.Second)
+}
+
+// waitForDeploymentWithin é o waitForDeployment com teto explícito — para
+// comandos com o próprio --wait-timeout (ex: `db update`, cujo rollout tem
+// janela maior que a de um deploy de app). timeout <= 0 cai no default de 5min.
+func waitForDeploymentWithin(client *api.Client, deployID string, format ui.OutputFormat, timeout time.Duration) (*api.Deployment, error) {
 	if timeout <= 0 {
 		timeout = 5 * time.Minute
 	}

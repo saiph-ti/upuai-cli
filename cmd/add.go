@@ -405,13 +405,40 @@ func runManagedDatabaseAdd(projectID, envID string, cfg *config.ProjectConfig, n
 	return nil
 }
 
+// managedEngineAliases traduz os nomes curtos anunciados no help (--engine
+// postgres|mongo) para o engine canônico do catálogo de templates
+// (postgresql/mongodb). Sem isso o match exato contra engine/nome do template
+// recusava exatamente o que o próprio help ensina a digitar.
+var managedEngineAliases = map[string]string{
+	"postgres": "postgresql",
+	"mongo":    "mongodb",
+}
+
+// canonicalEngine normaliza o engine digitado (trim + lower + alias).
+func canonicalEngine(engine string) string {
+	e := strings.ToLower(strings.TrimSpace(engine))
+	if canonical, ok := managedEngineAliases[e]; ok {
+		return canonical
+	}
+	return e
+}
+
+// templateMatchesEngine: o template casa pelo engine canônico ou pelo nome
+// exibido (ex: "PostgreSQL"), case-insensitive.
+func templateMatchesEngine(t api.DatabaseTemplate, engine string) bool {
+	canonical := canonicalEngine(engine)
+	return strings.EqualFold(t.Engine, canonical) ||
+		strings.EqualFold(t.Name, canonical) ||
+		strings.EqualFold(t.Name, strings.TrimSpace(engine))
+}
+
 // pickDatabaseTemplate resolve o template escolhido: por --engine (match em
-// engine ou nome, case-insensitive) ou via picker interativo quando o flag é
-// vazio.
+// engine ou nome, case-insensitive, aceitando os aliases curtos) ou via picker
+// interativo quando o flag é vazio.
 func pickDatabaseTemplate(templates []api.DatabaseTemplate, engine string) (*api.DatabaseTemplate, error) {
 	if engine != "" {
 		for i := range templates {
-			if strings.EqualFold(templates[i].Engine, engine) || strings.EqualFold(templates[i].Name, engine) {
+			if templateMatchesEngine(templates[i], engine) {
 				return &templates[i], nil
 			}
 		}

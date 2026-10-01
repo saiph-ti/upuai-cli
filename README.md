@@ -167,6 +167,12 @@ See [Workspaces](#workspaces) for how linked directories pin their workspace.
 | `db public enable --allow <ip\|cidr>` | Publish restricted to those origins (repeatable; replaces the list) |
 | `db public enable --any` | Publish open to any IP |
 | `db public disable` | Remove the public endpoint and its allowlist |
+| `db extensions` | List the managed Postgres extensions (PostGIS, pgvector, pg_trgm, ...) and their state: `enabled`, `available` or `unavailable` (needs `db update`). `-o json` for scripts |
+| `db extensions enable <name>` | `CREATE EXTENSION ... CASCADE` in the `app` database — instant, no restart (e.g. `postgis`) |
+| `db extensions disable <name>` | `DROP EXTENSION ... RESTRICT` — refused while anything depends on it (lists the dependents); never cascades. `-y` skips confirmation |
+| `db extensions update <name>` | Update an installed extension to the version shipped by the image |
+| `db version` | Show the database version and whether a maintenance update is pending (Postgres reads the running image; other engines report the stored version and never have a pending update) |
+| `db update` | Apply the pending maintenance update (same major; security patches, base OS, PostGIS). Restarts the database (~1–2 min); `--wait` blocks until it finishes (`--wait-timeout`, default 900 s), `-y` skips confirmation |
 
 ### Volumes
 
@@ -607,9 +613,17 @@ upuai db connect --enable             # Auto-enable public access if disabled
 upuai db backup --out file.dump       # pg_dump → file.dump
 upuai db restore -f file.dump         # pg_restore from file.dump
 upuai db restore -f file.dump -y      # Skip confirmation
+upuai db extensions                   # Managed Postgres extensions and their state
+upuai db extensions enable postgis    # CREATE EXTENSION postgis (instant, no restart)
+upuai db extensions disable postgis   # DROP EXTENSION ... RESTRICT (asks confirmation)
+upuai db extensions update postgis    # Update to the version shipped by the image
+upuai db version                      # Running version + pending update
+upuai db update --yes --wait          # Apply the maintenance update and wait
 ```
 
 `db connect` requires `psql` on `$PATH`; `db backup` / `db restore` require `pg_dump` / `pg_restore` (postgresql-client / libpq). Public access is auto-prompted when disabled — confirm or pass `--enable`.
+
+Extensions are managed in the `app` database (the one in `DATABASE_URL`) from a curated list; the platform's current Postgres image ships PostGIS, pgvector and 25+ others, so enabling one never restarts the database. A database still on an older image shows extensions such as PostGIS as `unavailable` — run `upuai db update` (one restart) first. Other extensions or databases remain available over SQL with the database's own credentials.
 
 ### environment
 

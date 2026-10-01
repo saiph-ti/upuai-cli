@@ -35,7 +35,9 @@ cli/
 │   ├── run.go                 # Executa comando com env vars injetadas (`-s` opcional, `--` opcional; parse manual via DisableFlagParsing)
 │   ├── shell.go               # Subshell interativo com env vars do service (paridade `railway shell`)
 │   ├── ssh.go                 # Sessão DENTRO do container em execução (`-s`, `--`, PTY auto, `-n` sem stdin; parse manual via DisableFlagParsing)
-│   ├── db.go                  # `db connect` (psql interativo) / `db backup` (pg_dump) / `db restore` (pg_restore) — usa endpoint público
+│   ├── db.go                  # `db connect` (psql interativo) / `db backup` (pg_dump) / `db restore` (pg_restore) / `db public` — usa endpoint público
+│   ├── db_extensions.go       # `db extensions` (ext) → list, enable, disable, update — extensões Postgres gerenciadas (allowlist da plataforma) + explainDatabaseError
+│   ├── db_update.go           # `db version` (versão viva + atualização pendente) e `db update` (atualização de manutenção, --wait/--wait-timeout)
 │   ├── configset.go           # `config show|get` e `config set` — build/deploy config do serviço (builder, comandos, health, root-dir)
 │   ├── scheduler.go           # `scheduler` (cron/schedulers) → list, create (`--schedule` ou `--once`), run, pause, resume, delete
 │   ├── environment.go         # Gerencia ambientes (alias: env) — subcommands: list, switch, new, delete
@@ -64,6 +66,7 @@ cli/
 │   │   ├── processes.go       # ListProcesses (multi-process service: web/worker/clock/release)
 │   │   ├── variables.go       # ListVariables, SetVariables, DeleteVariable
 │   │   ├── domains.go         # ListDomains, AddDomain, DeleteDomain
+│   │   ├── database.go        # Public access (Get/SetDatabasePublicAccess), extensões (List/Enable/Disable/UpdateDatabaseExtension, timeout próprio de 75s), GetDatabaseVersion, ApplyDatabaseMaintenance
 │   │   ├── tokens.go          # CreateToken, ListTokens, RevokeToken, GetSelfToken (GET /tokens/self — identidade do UPUAI_TOKEN)
 │   │   ├── tenant.go          # ListWorkspaces, SwitchWorkspace, ResolveProjectWorkspace (a API modela como "tenant"; o resto do CLI só fala workspace)
 │   │   └── errors.go          # APIError (+ Code do catálogo) e helpers ErrorCode/StatusCode
@@ -99,7 +102,7 @@ cli/
 | **Projeto** | `init`, `link`, `unlink`, `list` (ls), `open`, `delete`, `status` |
 | **Deploy** | `deploy`, `up` (source local — **não** é alias de deploy), `redeploy`, `rollback`, `promote`, `down` |
 | **Serviço** | `add`, `service delete`, `ps`, `restart`, `logs`, `scale`, `run`, `shell`, `ssh` |
-| **Database** | `db connect` (psql), `db backup` (pg_dump), `db restore` (pg_restore) |
+| **Database** | `db connect` (psql), `db backup` (pg_dump), `db restore` (pg_restore), `db public {enable,disable}`, `db extensions {enable,disable,update}`, `db version`, `db update` |
 | **Ambiente** | `environment` (env) → `list`, `switch`, `new`, `delete` |
 | **Configuração** | `variables` (vars/variable) → `list`, `set`, `delete`, `shared {list,enable,disable}` · `domain` (domains) → `list`, `add`, `generate`, `delete` · `config` → `show` (get), `set` |
 | **Agendamento** | `scheduler` (cron/schedulers) → `list`, `create`, `run`, `pause`, `resume`, `delete` |
@@ -272,6 +275,7 @@ client.GetRaw(path) ([]byte, error)    // GET sem unmarshal (raw bytes, para log
 client.Post(path, body, &result)
 client.Put(path, body, &result)
 client.Delete(path)
+client.DeleteJSON(path, &result)       // DELETE cujo corpo de resposta interessa
 ```
 
 `GetRaw` é usado quando a API retorna texto plano (ex: logs). Retorna `[]byte` em vez de fazer JSON unmarshal.

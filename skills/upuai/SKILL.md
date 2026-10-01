@@ -1,7 +1,7 @@
 ---
 name: upuai
 description: Deploy, manage, and troubleshoot projects on Upuai Cloud using the upuai CLI. Route-first skill — read the routing table below and follow the matching section.
-version: 1.1.0
+version: 1.2.0
 when-to-use: When the user wants to deploy a project to Upuai, check status/logs, configure env vars or domains, manage databases, roll back, promote between environments, or use the upuai CLI for any task.
 homepage: https://upuai.com.br
 ---
@@ -20,6 +20,7 @@ Read only the section(s) that match the user's intent.
 | "what's broken / logs / status / rollback" | [Troubleshoot](#troubleshoot) |
 | "set env var / add domain / change build" | [Configure](#configure) |
 | "connect to db / backup / restore" | [Database](#database) |
+| "PostGIS / pgvector / Postgres extensions / db update" | [Database](#database) |
 | Promote staging → production | [Environments](#environments) |
 | "project not found" / empty project list / user is in more than one org | [Workspaces](#workspaces) |
 | Anything else | Read `https://upuai.com.br/llms-full.txt` |
@@ -29,7 +30,7 @@ Read only the section(s) that match the user's intent.
 Always invoke `upuai` in non-interactive mode. Without these, prompts will hang in agent environments.
 
 1. **Auth**: always run `upuai whoami` first. If it returns the expected user, you're authenticated — the CLI reads `~/.upuai/credentials.json` and auto-refreshes the JWT on 401. If `whoami` fails, ask the user to run `upuai login` once on their own machine (browser OAuth or email OTP — both interactive), same pattern as `railway login`, `vercel login`, `fly auth login`. For **CI/automation**, the sanctioned headless path is a scoped token: a human runs `upuai token create --name <name> --scope deploy` (add `--project <id>` to scope it to one project, `--expires <days>` for a TTL), then sets the printed secret in `UPUAI_TOKEN` (opaque, long-lived, revocable). `--scope read` mints a read-only token (GET only, and neither `upuai ssh` nor bucket credentials). List with `upuai token list`, revoke with `upuai token revoke <id>`. Never stuff a user JWT into an env var — use `upuai token`.
-2. **Skip confirmations**: pass `-y` / `--yes` on any command that mutates state (`init`, `deploy`, `down`, `delete`, `rollback`, `promote`, `db restore`, `vars delete`, `domain delete`).
+2. **Skip confirmations**: pass `-y` / `--yes` on any command that mutates state (`init`, `deploy`, `down`, `delete`, `rollback`, `promote`, `db restore`, `db update`, `db extensions disable`, `vars delete`, `domain delete`).
 3. **JSON output for parsing**: pass `-o json` on `status`, `logs`, `list`, `vars list`, `domain list`, `env list`, and (when waiting) `deploy --wait -o json`.
 4. **Pre-supply flags on `init`**: when `--yes` is set, `init` requires `--name <slug>`. Pass `--framework <name>` to skip auto-detect prompts. Pass `--repo <owner>/<repo>` (or `--image <ref>`) to create a deployable service in one step instead of an empty placeholder. The CLI errors out with a clear message if a flag is missing rather than hanging on a prompt.
 5. **Block until terminal**: prefer `upuai deploy --wait` over polling `upuai status` yourself — the CLI already handles the polling, status transitions, timeout, and non-zero exit on failure.
@@ -301,7 +302,21 @@ upuai db public                        # is it published? from which origins?
 upuai db public enable --allow 203.0.113.7 --allow 10.0.0.0/8
 upuai db public enable --any --yes     # open to any IP (no prompt)
 upuai db public disable                # unpublish (route + allowlist removed)
+upuai db extensions                    # managed Postgres extensions: enabled / available / unavailable
+upuai db extensions enable postgis     # CREATE EXTENSION (instant, no restart)
+upuai db extensions disable postgis --yes  # DROP EXTENSION ... RESTRICT (refused while in use)
+upuai db extensions update postgis     # update to the version shipped by the image
+upuai db version -o json               # {engine, version, updateAvailable}
+upuai db update --yes --wait           # apply the maintenance update (restarts the DB ~1–2 min); --wait-timeout defaults to 900 s
 ```
+
+**Extensions (PostGIS, pgvector, ...)**: the platform's current Postgres image ships them; enabling is a
+`CREATE EXTENSION` in the `app` database and never restarts anything. If `db extensions`
+shows the one you need as `unavailable`, the database runs an older image: run
+`upuai db update --yes --wait` first (one restart, same major version), then enable it.
+`disable` never cascades — when it is refused, the error lists what depends on the extension.
+Prefer these commands over hand-written `CREATE EXTENSION` so the state shows in the
+dashboard (CLI v0.26.0+).
 
 ### Volumes
 
