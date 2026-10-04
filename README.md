@@ -434,13 +434,13 @@ Without `--repo` / `--image`, the service is type `empty` and cannot be deployed
 upuai deploy                          # Deploy to default environment (fire-and-forget)
 upuai deploy -e production            # Deploy to production
 upuai deploy --wait                   # Block until terminal status (success/failed/...)
-upuai deploy --wait --wait-timeout 600 # Wait up to 10 minutes (default 300 s)
+upuai deploy --wait --wait-timeout 600 # Stop waiting after 10 minutes (default: no limit)
 upuai deploy --wait -o json           # JSON-printed final Deployment object
 upuai deploy --watch                  # Watch for file changes and auto-redeploy
 upuai deploy -s mailpit --image axllent/mailpit:v1.25.0 --wait --yes  # Set an image service's image, then deploy
 ```
 
-`--wait` polls every 3 s. Exit code is non-zero on `failed` / `cancelled` / `build_failed`.
+`--wait` polls every 3 s until the deployment reaches a terminal status — there is no client-side timeout unless you pass `--wait-timeout <seconds>` (the platform ends every deployment on its own). Exit code is non-zero on `failed` / `cancelled` / `build_failed`, and when `--wait-timeout` is hit (the deployment itself keeps running).
 
 `--image` only applies to image services (a git service would be converted, so it is refused) and needs a service (`-s` or the linked one). The image is set in the same environment the deploy targets (`-e`, else the linked one, else the default), and an empty tag or digest is rejected before anything is written.
 
@@ -450,7 +450,7 @@ upuai deploy -s mailpit --image axllent/mailpit:v1.25.0 --wait --yes  # Set an i
 upuai up                              # Deploy the current directory from local source
 upuai up -e production                # Deploy local source to production
 upuai up --wait                       # Block until terminal status (success/failed/...)
-upuai up --wait --wait-timeout 600    # Wait up to 10 minutes (default 300 s)
+upuai up --wait --wait-timeout 600    # Stop waiting after 10 minutes (default: no limit)
 ```
 
 `upuai up` packages the local working directory into a tarball, uploads it to platform

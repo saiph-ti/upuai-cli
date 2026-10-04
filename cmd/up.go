@@ -163,7 +163,7 @@ func humanSize(n int64) string {
 
 func init() {
 	upCmd.Flags().BoolVar(&upWaitFlag, "wait", false, "Block until the deployment reaches a terminal status. Exits non-zero on failure.")
-	upCmd.Flags().IntVar(&upWaitTimeoutFlag, "wait-timeout", 300, "Maximum seconds to wait when --wait is set (default 300)")
+	upCmd.Flags().IntVar(&upWaitTimeoutFlag, "wait-timeout", 0, "Maximum seconds to wait when --wait is set (default 0 = no limit: waits until the deployment reaches a terminal status)")
 	upCmd.Flags().StringVarP(&upService, "service", "s", "", "Service name, slug, or ID (overrides linked service)")
 	rootCmd.AddCommand(upCmd)
 }

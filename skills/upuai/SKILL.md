@@ -104,7 +104,7 @@ upuai init \
 upuai deploy --wait --yes -o json
 ```
 
-`--wait` polls every 3 seconds until status is `success` / `failed` / `cancelled` / `build_failed` / `superseded`. Default timeout: 300s — override with `--wait-timeout 600`. Exit code is non-zero on `failed` / `cancelled` / `build_failed`.
+`--wait` polls every 3 seconds until status is `success` / `failed` / `cancelled` / `build_failed` / `superseded`. There is no client-side timeout by default: the wait ends when the platform ends the deployment (every deployment reaches a terminal status). Pass `--wait-timeout <seconds>` to cap it; when the cap is hit the command exits non-zero and the deployment keeps running. Exit code is non-zero on `failed` / `cancelled` / `build_failed`.
 
 ### Deploy from local source — `upuai up` (no git repo)
 
@@ -118,7 +118,7 @@ upuai up --wait --yes -o json
 
 - Honors `.gitignore` / `.upuaiignore`; always excludes `.git`, `node_modules`, `.env*`.
 - Reads local `upuai.toml` exactly like the git path — release-phase / migrations apply identically.
-- `--wait` blocks until the deployment reaches a terminal status (exits non-zero on failure); `--wait-timeout <seconds>` caps the wait (default 300).
+- `--wait` blocks until the deployment reaches a terminal status (exits non-zero on failure); `--wait-timeout <seconds>` caps the wait (default: no cap).
 
 ### Variants
 

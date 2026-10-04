@@ -165,7 +165,7 @@ func printDatabaseUpToDate(res *api.DatabaseMaintenanceResult, format ui.OutputF
 
 func init() {
 	dbUpdateCmd.Flags().BoolVar(&dbUpdateWait, "wait", false, "Block until the update reaches a terminal status. Exits non-zero on failure.")
-	dbUpdateCmd.Flags().IntVar(&dbUpdateWaitTimeout, "wait-timeout", dbUpdateDefaultWaitTimeout, "Maximum seconds to wait when --wait is set")
+	dbUpdateCmd.Flags().IntVar(&dbUpdateWaitTimeout, "wait-timeout", dbUpdateDefaultWaitTimeout, "Maximum seconds to wait when --wait is set (0 = no limit)")
 	for _, c := range []*cobra.Command{dbVersionCmd, dbUpdateCmd} {
 		c.Flags().StringVarP(&dbServiceRef, "service", "s", "", "Database service name, slug, or ID (overrides project auto-resolve)")
 	}

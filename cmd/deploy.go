@@ -253,23 +253,34 @@ func runDeploy(projectID, env, serviceID string) error {
 	return nil
 }
 
+// deployPollInterval é o intervalo entre consultas do --wait. var em vez de
+// const só para o teste comprimir o relógio.
+var deployPollInterval = 3 * time.Second
+
 // waitForDeployment polls GetDeployment every 3 seconds until the deployment
-// hits a terminal status or the timeout expires. Prints status transitions to
-// stderr in text mode; stays silent in JSON mode (caller does the rendering).
+// hits a terminal status or the --wait-timeout expires. Prints status
+// transitions to stderr in text mode; stays silent in JSON mode (caller does
+// the rendering).
 func waitForDeployment(client *api.Client, deployID string, format ui.OutputFormat) (*api.Deployment, error) {
 	return waitForDeploymentWithin(client, deployID, format, time.Duration(deployWaitTimeoutFlag)*time.Second)
 }
 
 // waitForDeploymentWithin é o waitForDeployment com teto explícito — para
-// comandos com o próprio --wait-timeout (ex: `db update`, cujo rollout tem
-// janela maior que a de um deploy de app). timeout <= 0 cai no default de 5min.
+// comandos com o próprio --wait-timeout (ex: `db update`).
+//
+// timeout <= 0 = SEM teto no cliente: espera até o deployment chegar a um status
+// terminal. É o default do `deploy`/`up`, e não por comodidade: quem encerra um
+// deploy é a plataforma (todo deploy termina — sucesso, falha ou o teto dela), e
+// um teto do CLI menor que um deploy legítimo transforma sucesso em erro. O
+// default foi 300s até a v0.26: medido em produção (2026-10), 52% dos deploys
+// bem-sucedidos levavam mais que isso da criação ao fim (mediana 314s, p90 711s)
+// — `--wait` saía com "timed out" e código de erro para um deploy que concluía
+// segundos depois.
 func waitForDeploymentWithin(client *api.Client, deployID string, format ui.OutputFormat, timeout time.Duration) (*api.Deployment, error) {
-	if timeout <= 0 {
-		timeout = 5 * time.Minute
+	var deadline time.Time
+	if timeout > 0 {
+		deadline = time.Now().Add(timeout)
 	}
-	const pollInterval = 3 * time.Second
-
-	deadline := time.Now().Add(timeout)
 	lastStatus := ""
 
 	for {
@@ -290,11 +301,11 @@ func waitForDeploymentWithin(client *api.Client, deployID string, format ui.Outp
 			return dep, nil
 		}
 
-		if time.Now().After(deadline) {
-			return dep, fmt.Errorf("timed out after %s waiting for deployment %s (last status: %s)", timeout, deployID, dep.Status)
+		if !deadline.IsZero() && time.Now().After(deadline) {
+			return dep, fmt.Errorf("stopped waiting after %s (--wait-timeout): deployment %s is still %s — it keeps running on the platform; follow it with `upuai logs` or `upuai status`", timeout, deployID, dep.Status)
 		}
 
-		time.Sleep(pollInterval)
+		time.Sleep(deployPollInterval)
 	}
 }
 
@@ -316,7 +327,7 @@ func init() {
 	deployCmd.Flags().BoolVarP(&deployWatchFlag, "watch", "w", false, "Watch for changes and auto-redeploy")
 	deployCmd.Flags().StringVar(&deployImageFlag, "image", "", "Set the image of an image service before deploying (e.g. nginx:1.27 or ghcr.io/org/app@sha256:...). Requires -s or a linked service")
 	deployCmd.Flags().BoolVar(&deployWaitFlag, "wait", false, "Block until the deployment reaches a terminal status (success, failed, cancelled, build_failed, superseded). Exits non-zero on failure.")
-	deployCmd.Flags().IntVar(&deployWaitTimeoutFlag, "wait-timeout", 300, "Maximum seconds to wait when --wait is set (default 300)")
+	deployCmd.Flags().IntVar(&deployWaitTimeoutFlag, "wait-timeout", 0, "Maximum seconds to wait when --wait is set (default 0 = no limit: waits until the deployment reaches a terminal status)")
 	deployCmd.Flags().StringVarP(&deployService, "service", "s", "", "Service name, slug, or ID (overrides linked service)")
 	rootCmd.AddCommand(deployCmd)
 }
