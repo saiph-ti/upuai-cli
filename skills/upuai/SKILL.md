@@ -21,6 +21,7 @@ Read only the section(s) that match the user's intent.
 | "set env var / add domain / change build" | [Configure](#configure) |
 | "connect to db / backup / restore" | [Database](#database) |
 | "PostGIS / pgvector / Postgres extensions / db update" | [Database](#database) |
+| "MySQL access denied / reset or rotate the database password" | [Database](#database) |
 | Promote staging → production | [Environments](#environments) |
 | "project not found" / empty project list / user is in more than one org | [Workspaces](#workspaces) |
 | Anything else | Read `https://upuai.com.br/llms-full.txt` |
@@ -308,6 +309,8 @@ upuai db extensions disable postgis --yes  # DROP EXTENSION ... RESTRICT (refuse
 upuai db extensions update postgis     # update to the version shipped by the image
 upuai db version -o json               # {engine, version, updateAvailable}
 upuai db update --yes --wait           # apply the maintenance update (restarts the DB ~1–2 min); --wait-timeout defaults to 900 s
+upuai db credentials repair            # managed MySQL: check the login, re-apply the account if refused
+upuai db credentials rotate --yes      # managed MySQL: new password (old one stops working at once)
 ```
 
 **Extensions (PostGIS, pgvector, ...)**: the platform's current Postgres image ships them (PostGIS,
@@ -326,6 +329,23 @@ app container to get an extension. Not offered: extensions that need `shared_pre
 (pg_cron, pg_stat_statements, pgaudit). `disable` never cascades — when it is refused, the error
 lists what depends on the extension. An older CLI prints the `upuai db` help (exit 0) instead of
 running `db extensions` / `db version` / `db update` — run `upuai upgrade`.
+
+**Managed MySQL credentials**: the platform creates the application account (`MYSQL_USER` /
+`MYSQL_PASSWORD`, initial database `MYSQL_DATABASE`) and keeps the credential in use. The
+variables on the database service mirror it and are **read-only** — editing or deleting them is
+refused, and it would not change the database anyway. There is no root account. The rules:
+- Wire a service with a reference, never a pasted URL: `upuai variables set
+  'DATABASE_URL=${{<db-name>.DATABASE_URL}}' -s <service>`, then deploy. References resolve at
+  deploy time.
+- The account can create databases, users, tables, triggers and routines. For another database
+  name, create it over SQL and build the URL from references:
+  `mysql://${{db.MYSQL_USER}}:${{db.MYSQL_PASSWORD}}@${{db.HOST}}:3306/<your_database>`.
+- `Access denied` on a managed MySQL: run `upuai db credentials repair -s <db>` and redeploy the
+  services it lists. Do **not** delete and recreate the database, edit its variables, or replace it
+  with a `mysql` Docker image — none of those is the fix, and the last one loses managed backups.
+- New password: `upuai db credentials rotate -s <db> --yes` (owner/admin), then redeploy the
+  listed services. `upuai ssh` into a managed MySQL is refused by design; run SQL from one of
+  your app services with a client and `DATABASE_URL`. CLI v0.27.0+.
 
 ### Volumes
 

@@ -38,6 +38,7 @@ cli/
 │   ├── db.go                  # `db connect` (psql interativo) / `db backup` (pg_dump) / `db restore` (pg_restore) / `db public` — usa endpoint público
 │   ├── db_extensions.go       # `db extensions` (ext) → list, enable, disable, update — extensões Postgres gerenciadas (allowlist da plataforma) + explainDatabaseError
 │   ├── db_update.go           # `db version` (versão viva + atualização pendente) e `db update` (atualização de manutenção, --wait/--wait-timeout)
+│   ├── db_credentials.go      # `db credentials` (creds) → repair, rotate — conta de aplicação do MySQL gerenciado (a senha nunca trafega pela CLI)
 │   ├── configset.go           # `config show|get` e `config set` — build/deploy config do serviço (builder, comandos, health, root-dir)
 │   ├── scheduler.go           # `scheduler` (cron/schedulers) → list, create (`--schedule` ou `--once`), run, pause, resume, delete
 │   ├── environment.go         # Gerencia ambientes (alias: env) — subcommands: list, switch, new, delete
@@ -102,7 +103,7 @@ cli/
 | **Projeto** | `init`, `link`, `unlink`, `list` (ls), `open`, `delete`, `status` |
 | **Deploy** | `deploy`, `up` (source local — **não** é alias de deploy), `redeploy`, `rollback`, `promote`, `down` |
 | **Serviço** | `add`, `service delete`, `ps`, `restart`, `logs`, `scale`, `run`, `shell`, `ssh` |
-| **Database** | `db connect` (psql), `db backup` (pg_dump), `db restore` (pg_restore), `db public {enable,disable}`, `db extensions {enable,disable,update}`, `db version`, `db update` |
+| **Database** | `db connect` (psql), `db backup` (pg_dump), `db restore` (pg_restore), `db public {enable,disable}`, `db extensions {enable,disable,update}`, `db version`, `db update`, `db credentials {repair,rotate}` |
 | **Ambiente** | `environment` (env) → `list`, `switch`, `new`, `delete` |
 | **Configuração** | `variables` (vars/variable) → `list`, `set`, `delete`, `shared {list,enable,disable}` · `domain` (domains) → `list`, `add`, `generate`, `delete` · `config` → `show` (get), `set` |
 | **Agendamento** | `scheduler` (cron/schedulers) → `list`, `create`, `run`, `pause`, `resume`, `delete` |

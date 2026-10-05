@@ -173,6 +173,8 @@ See [Workspaces](#workspaces) for how linked directories pin their workspace.
 | `db extensions update <name>` | Update an installed extension to the version shipped by the image |
 | `db version` | Show the database version and whether a maintenance update is pending (Postgres reads the running image; other engines report the stored version and never have a pending update) |
 | `db update` | Apply the pending maintenance update (same major; security patches, base OS, PostGIS). Restarts the database (~1–2 min); `--wait` blocks until it finishes (`--wait-timeout`, default 900 s), `-y` skips confirmation |
+| `db credentials repair` | Managed MySQL: check that the application account can log in and re-apply it if the database refuses it. Does not change the password. Lists the services to redeploy |
+| `db credentials rotate` | Managed MySQL: generate a new password (the current one stops opening connections immediately). Owner/admin; `-y` skips confirmation. Lists the services to redeploy |
 
 ### Volumes
 
@@ -619,11 +621,15 @@ upuai db extensions disable postgis   # DROP EXTENSION ... RESTRICT (asks confir
 upuai db extensions update postgis    # Update to the version shipped by the image
 upuai db version                      # Running version + pending update
 upuai db update --yes --wait          # Apply the maintenance update and wait
+upuai db credentials repair           # Managed MySQL: check the login, re-apply the account if refused
+upuai db credentials rotate --yes     # Managed MySQL: new password, then redeploy the listed services
 ```
 
 `db connect` requires `psql` on `$PATH`; `db backup` / `db restore` require `pg_dump` / `pg_restore` (postgresql-client / libpq). Public access is auto-prompted when disabled — confirm or pass `--enable`.
 
 Extensions are managed in the `app` database (the one in `DATABASE_URL`) from a curated list; the platform's current Postgres image ships PostGIS, pgvector and 25+ others, so enabling one never restarts the database. A database still on an older image shows extensions such as PostGIS as `unavailable` — run `upuai db update` (one restart) first. Your app's migrations can also run `CREATE EXTENSION IF NOT EXISTS postgis;` (the `DATABASE_URL` user owns the `app` database) — the dashboard and `db extensions` show it either way. Extensions that need `shared_preload_libraries` (pg_cron, pg_stat_statements, pgaudit) are not offered; other databases remain available over SQL with the database's own credentials.
+
+Managed MySQL: the platform creates the application account and keeps the credential in use; the database service variables (`MYSQL_USER`, `MYSQL_PASSWORD`, `DATABASE_URL`, ...) mirror it and are read-only. Wire your services with `DATABASE_URL=${{<db-name>.DATABASE_URL}}` so a password change reaches them on the next deploy. The account can create its own databases, users and routines; there is no root account. `db credentials repair` fixes an `Access denied`, `db credentials rotate` issues a new password.
 
 ### environment
 

@@ -161,3 +161,43 @@ func (c *Client) ApplyDatabaseMaintenance(envID, serviceID string) (*DatabaseMai
 	}
 	return &res, nil
 }
+
+// ─── Credenciais da conta de aplicação (MySQL gerenciado) ────────────────────
+
+// DatabaseCredentialsResult é o desfecho de um reparo ou rotação. A senha nunca
+// volta aqui: fica nas variáveis do serviço do banco. AffectedServices são os
+// serviços que carregam a credencial e precisam de redeploy para receber a atual.
+type DatabaseCredentialsResult struct {
+	Rotated          bool                        `json:"rotated"`
+	Repaired         bool                        `json:"repaired"`
+	AffectedServices []DatabaseCredentialService `json:"affectedServices"`
+}
+
+type DatabaseCredentialService struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+func databaseCredentialsPath(envID, serviceID, action string) string {
+	return fmt.Sprintf("/environments/%s/services/%s/database/credentials/%s", envID, serviceID, action)
+}
+
+// RepairDatabaseCredentials prova o login da conta e a reaplica se o banco a
+// recusa. Não troca a senha.
+func (c *Client) RepairDatabaseCredentials(envID, serviceID string) (*DatabaseCredentialsResult, error) {
+	var res DatabaseCredentialsResult
+	if err := c.withTimeout(databaseExtensionTimeout).Post(databaseCredentialsPath(envID, serviceID, "repair"), nil, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+// RotateDatabaseCredentials gera uma senha nova; a anterior deixa de abrir
+// conexão na hora.
+func (c *Client) RotateDatabaseCredentials(envID, serviceID string) (*DatabaseCredentialsResult, error) {
+	var res DatabaseCredentialsResult
+	if err := c.withTimeout(databaseExtensionTimeout).Post(databaseCredentialsPath(envID, serviceID, "rotate"), nil, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}

@@ -270,6 +270,7 @@ const (
 	reasonManagedDatabaseOnly  = "managedDatabaseOnly"
 	reasonNoDatabaseEngine     = "noDatabaseEngine"
 	reasonPostgresOnly         = "postgresOnly"
+	reasonMySQLOnly            = "mysqlOnly"
 )
 
 // explainDatabaseError traduz os códigos estáveis da API em orientação
@@ -308,7 +309,9 @@ func explainDatabaseError(err error, extName, action string) error {
 	case "DB_EXTENSION_NOT_ALLOWED":
 		msg = fmt.Sprintf("%s is not a platform-managed extension — run 'upuai db extensions' for the supported list (you can still create other extensions over SQL)", subject)
 	case "DB_OPERATION_IN_PROGRESS":
-		msg = "another operation (update or version change) is running on this database — wait for it to finish and retry"
+		msg = "another operation (provisioning, update, version change or credential change) is running on this database — wait for it to finish and retry"
+	case "DB_NOT_READY":
+		msg = "the database is not up yet — wait for it to be running and retry"
 	case "DB_OBJECT_LOCKED":
 		msg = "the database is busy: another session holds a lock on the objects involved — retry in a moment"
 	case "DB_READ_ONLY":
@@ -331,6 +334,8 @@ func explainDatabaseError(err error, extName, action string) error {
 			msg = "this command only works on managed database services"
 		case reasonPostgresOnly:
 			msg = "extensions are only available on managed PostgreSQL databases"
+		case reasonMySQLOnly:
+			msg = "credential repair and rotation are only available on managed MySQL databases"
 		default:
 			return fmt.Errorf("%s: %w", action, err)
 		}
