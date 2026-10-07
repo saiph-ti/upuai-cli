@@ -1,7 +1,7 @@
 ---
 name: upuai
 description: Deploy, manage, and troubleshoot projects on Upuai Cloud using the upuai CLI. Route-first skill — read the routing table below and follow the matching section.
-version: 1.2.1
+version: 1.3.0
 when-to-use: When the user wants to deploy a project to Upuai, check status/logs, configure env vars or domains, manage databases, roll back, promote between environments, or use the upuai CLI for any task.
 homepage: https://upuai.com.br
 ---
@@ -144,7 +144,7 @@ upuai up --wait --yes -o json
 - `--name <slug>` — kebab-case project slug. **Required when `--yes` is set.**
 - `--repo <owner>/<repo>` — creates a repo-backed service. **GitHub and GitLab are both supported** — the provider is auto-detected from the URL/host. URLs (`https://github.com/owner/repo[.git]`, `git@github.com:owner/repo`, GitLab equivalents) are normalized to `owner/repo`. If you also pass `--type`, it must be `github` or `gitlab` to match the detected provider. Same auto-detect applies to `upuai add --repo <url>`.
 - `--branch <name>` — git branch (default `main`).
-- `--root-dir <path>` — subdirectory within the repo for monorepos (e.g. `apps/api`), or `.` to build from the repo root (a Dockerfile outside the root also needs `--dockerfile-path`, e.g. `--root-dir . --dockerfile-path apps/api/Dockerfile`). On a push, a service with a subdirectory redeploys when the push changes a file inside it or outside every sibling service's root dir (shared packages, lockfile); a repo-root service redeploys on every push.
+- `--root-dir <path>` — subdirectory within the repo for monorepos (e.g. `apps/api`), or `.` to build from the repo root. The service's `upuai.toml` lives in this directory. For a Dockerfile service in a monorepo whose Dockerfile needs the lockfile or sibling packages, keep `--root-dir apps/api` and set the build context to the repo root with `upuai config set --builder dockerfile --docker-context ../..` (CLI v0.28.0+; or `dockerContext = "../.."` in `apps/api/upuai.toml`). A `<Dockerfile name>.dockerignore` next to the Dockerfile (e.g. `apps/api/Dockerfile.dockerignore`) replaces the root `.dockerignore` for that build. On a push, a service with a subdirectory redeploys when the push changes a file inside it or outside every sibling service's root dir (shared packages, lockfile); a repo-root service redeploys on every push.
 - `--image <ref>` — creates a `docker_image`-type service; mutually exclusive with `--repo`.
 - `--framework <name>` — one of `Next.js`, `Vite`, `React`, `Node.js`, `Go`, `Django`, `Flask`, `Python`, `Rails`, `Docker`, `Static`. **Required when `--yes` is set and the CLI cannot auto-detect.** When in doubt, ask the user — a repo with both `Dockerfile` and `next.config.js` could go either way.
 
@@ -192,7 +192,8 @@ Decision tree for "it's not working":
 upuai status -o json                # full state
 upuai logs -n 200                   # last 200 log lines
 upuai logs -n 50 -o json            # JSON-parseable
-upuai redeploy --yes                # rerun last deploy (no code change)
+upuai redeploy --yes                # same commit, current config; reuses the image when build inputs are unchanged
+upuai redeploy --rebuild --yes      # same commit, built again (CLI v0.28.0+)
 upuai restart --yes                 # restart service (clears in-memory state)
 upuai rollback --list               # list deployments for rollback
 upuai rollback --to <deploy-id> --yes
@@ -209,7 +210,7 @@ For database investigation see [Database](#database).
 
 ### upuai.toml — config as code
 
-The canonical way to express build/release/deploy behaviour. Lives at the repo root. Cached server-side per SHA. Doc + schema: `https://upuai.com.br/docs/upuai-toml` and `https://upuai.com.br/schemas/upuai-toml-v1.json`.
+The canonical way to express build/release/deploy behaviour. Lives in the service's root directory (the repo root unless `--root-dir` is set). Cached server-side per SHA. Doc + schema: `https://upuai.com.br/docs/upuai-toml` and `https://upuai.com.br/schemas/upuai-toml-v1.json`.
 
 Minimal example — only set keys the user needs:
 
@@ -219,7 +220,8 @@ Minimal example — only set keys the user needs:
 [build]
 builder = "railpack"            # default; or "dockerfile"
 buildCommand = "pnpm build"
-dockerfilePath = "Dockerfile"   # only when builder = "dockerfile"
+dockerfilePath = "Dockerfile"   # only when builder = "dockerfile"; relative to the root directory
+dockerContext = "../.."          # optional build context, relative to the root directory (monorepo: repo root)
 
 [deploy]
 startCommand = "node dist/server.js"
@@ -265,7 +267,7 @@ upuai vars shared disable DATABASE_URL -s site             # stop injecting
 upuai vars shared enable PUBLIC_ID --origin project -s api # key defined in both layers
 ```
 
-Vars take effect on the **next deploy** — trigger `upuai redeploy --yes` if the user expects them live immediately. Never write secrets to the user's chat / repo / logs.
+Vars take effect on the **next deploy** — trigger `upuai redeploy --yes` if the user expects them live immediately. A redeploy reuses the last image of that commit when nothing that goes into the build changed — build settings (builder, build and start commands, Dockerfile path and context) and build-time variables (scope `both` or `build`) — (multi-process Procfile services and `upuai up` deploys always build), so set variables the build never reads (ports, URLs the server reads at runtime, API keys of server code) with `--scope runtime`: changing them then redeploys in about a minute with no build. A variable with the default scope (`both`) or `build` is a build input — changing it builds again. Never write secrets to the user's chat / repo / logs.
 
 ### Custom domains
 

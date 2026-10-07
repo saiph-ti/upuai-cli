@@ -8,11 +8,23 @@ import (
 	"github.com/upuai-cloud/cli/internal/ui"
 )
 
-var redeployService string
+var (
+	redeployService string
+	redeployRebuild bool
+)
 
 var redeployCmd = &cobra.Command{
 	Use:   "redeploy",
 	Short: "Redeploy the latest deployment",
+	Long: `Redeploy the latest deployment: the same commit goes live again with the
+current configuration (environment variables, resources).
+
+When nothing that goes into the build changed since a successful deploy of that
+commit — build settings (builder, build and start commands, Dockerfile path and
+context) and build-time variables (scope both or build) — its image is reused,
+the release command runs again and no build runs. Use --rebuild to build the
+commit again anyway. Multi-process (Procfile) services and upuai up deploys
+always build.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := requireAuth(); err != nil {
 			return err
@@ -47,7 +59,11 @@ var redeployCmd = &cobra.Command{
 		}
 
 		if !flagYes {
-			confirmed, err := ui.Confirm(fmt.Sprintf("Redeploy %s?", latest.ID))
+			prompt := fmt.Sprintf("Redeploy %s?", latest.ID)
+			if redeployRebuild {
+				prompt = fmt.Sprintf("Rebuild and redeploy %s?", latest.ID)
+			}
+			confirmed, err := ui.Confirm(prompt)
 			if err != nil {
 				return err
 			}
@@ -60,7 +76,7 @@ var redeployCmd = &cobra.Command{
 		var deployment *api.Deployment
 		err = ui.RunWithSpinner("Redeploying...", func() error {
 			var redeployErr error
-			deployment, redeployErr = client.Redeploy(latest.ID)
+			deployment, redeployErr = client.Redeploy(latest.ID, redeployRebuild)
 			return redeployErr
 		})
 		if err != nil {
@@ -90,5 +106,6 @@ var redeployCmd = &cobra.Command{
 
 func init() {
 	redeployCmd.Flags().StringVarP(&redeployService, "service", "s", "", "Service name, slug, or ID (overrides linked service)")
+	redeployCmd.Flags().BoolVar(&redeployRebuild, "rebuild", false, "Build the commit again instead of reusing the image of an earlier deploy")
 	rootCmd.AddCommand(redeployCmd)
 }

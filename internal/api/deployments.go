@@ -156,9 +156,16 @@ func (c *Client) Rollback(deployID string) (*Deployment, error) {
 	return &deployment, nil
 }
 
-func (c *Client) Redeploy(deployID string) (*Deployment, error) {
+// Redeploy runs the deployment's commit again with the current configuration.
+// The API reuses the image of an earlier successful deploy of that commit when
+// nothing that goes into the build changed; rebuild=true builds it again anyway.
+func (c *Client) Redeploy(deployID string, rebuild bool) (*Deployment, error) {
 	var deployment Deployment
-	err := c.Post(fmt.Sprintf("/deployments/%s/redeploy", deployID), nil, &deployment)
+	var body any
+	if rebuild {
+		body = map[string]bool{"rebuild": true}
+	}
+	err := c.Post(fmt.Sprintf("/deployments/%s/redeploy", deployID), body, &deployment)
 	if err != nil {
 		return nil, err
 	}

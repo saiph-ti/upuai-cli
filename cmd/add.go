@@ -53,6 +53,7 @@ var (
 	flagAddRootDir            string
 	flagAddBuilder            string
 	flagAddDockerfilePath     string
+	flagAddDockerContext      string
 	flagAddStartCommand       string
 	flagAddHealthCheck        string
 	flagAddHealthCheckTimeout int
@@ -71,7 +72,7 @@ Examples:
   upuai add --type database --name postgres
   upuai add --type github --name api --repo org/repo --branch main
   upuai add --name worker --repo org/repo --worker --start-command "bundle exec sidekiq"
-  upuai add --type github --name api --repo https://github.com/org/monorepo --root-dir apps/api --builder dockerfile --dockerfile-path apps/api/Dockerfile`,
+  upuai add --type github --name api --repo https://github.com/org/monorepo --root-dir apps/api --builder dockerfile --docker-context ../..`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := requireAuth(); err != nil {
 			return err
@@ -278,7 +279,7 @@ Examples:
 		}
 
 		// Apply build/deploy config if any flags were provided
-		hasBuildConfig := flagAddBuilder != "" || flagAddDockerfilePath != ""
+		hasBuildConfig := flagAddBuilder != "" || flagAddDockerfilePath != "" || flagAddDockerContext != ""
 		hasDeployConfig := flagAddStartCommand != "" || flagAddHealthCheck != "" || flagAddHealthCheckTimeout > 0
 		if hasBuildConfig || hasDeployConfig {
 			req := &api.UpdateInstanceRequest{}
@@ -286,6 +287,7 @@ Examples:
 				req.Build = &api.InstanceBuildConfig{
 					Builder:        flagAddBuilder,
 					DockerfilePath: flagAddDockerfilePath,
+					DockerContext:  flagAddDockerContext,
 				}
 			}
 			if hasDeployConfig {
@@ -475,7 +477,8 @@ func init() {
 	addCmd.Flags().StringVar(&flagAddBranch, "branch", "main", "Git branch (used with --repo, default: main)")
 	addCmd.Flags().StringVar(&flagAddRootDir, "root-dir", "", "Root directory within the repo (for monorepos, e.g. apps/api; . builds from the repo root)")
 	addCmd.Flags().StringVar(&flagAddBuilder, "builder", "", "Build system: dockerfile or railpack")
-	addCmd.Flags().StringVar(&flagAddDockerfilePath, "dockerfile-path", "", "Path to Dockerfile (used with --builder dockerfile)")
+	addCmd.Flags().StringVar(&flagAddDockerfilePath, "dockerfile-path", "", "Path to Dockerfile, relative to the root directory (used with --builder dockerfile)")
+	addCmd.Flags().StringVar(&flagAddDockerContext, "docker-context", "", "Dockerfile build context, relative to the root directory (e.g. ../.. for the repository root)")
 	addCmd.Flags().StringVar(&flagAddStartCommand, "start-command", "", "Command to start the service")
 	addCmd.Flags().StringVar(&flagAddHealthCheck, "health-check", "", "HTTP path for health check (e.g. /health)")
 	addCmd.Flags().IntVar(&flagAddHealthCheckTimeout, "health-check-timeout", 0, "Seconds the app may take to answer the health check before the deploy fails (default 300, max 600)")

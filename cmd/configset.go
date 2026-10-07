@@ -12,6 +12,7 @@ import (
 var (
 	flagConfigBuilder            string
 	flagConfigDockerfilePath     string
+	flagConfigDockerContext      string
 	flagConfigBuildCommand       string
 	flagConfigStartCommand       string
 	flagConfigHealthCheck        string
@@ -26,17 +27,17 @@ var configSetCmd = &cobra.Command{
 	Long: `Update build and deploy configuration for the linked service instance.
 
 For monorepos, set the build Root Directory with --root-dir (e.g. apps/api) on an
-existing github/gitlab service — no need to recreate it. Use --root-dir . to build
-from the repository root; a Dockerfile outside the root also needs its path, e.g.
---root-dir . --dockerfile-path apps/api/Dockerfile builds apps/api's Dockerfile
-with the whole repository as context. Changing repo/branch is a source-identity
-change and goes through a separate flow (re-add the source).
+existing github/gitlab service — no need to recreate it. The Dockerfile path and the
+build context are relative to the root directory: --docker-context ../.. gives
+apps/api's Dockerfile the whole repository (lockfile, sibling packages) while the
+service keeps apps/api as its directory, with its upuai.toml. Changing repo/branch
+is a source-identity change and goes through a separate flow (re-add the source).
 
 Examples:
-  upuai config set --builder dockerfile --dockerfile-path apps/api/Dockerfile
+  upuai config set --builder dockerfile --dockerfile-path Dockerfile.prod
   upuai config set --build-command "pnpm install && pnpm build" --start-command "node dist/server.js"
   upuai config set --root-dir apps/api
-  upuai config set --root-dir . --dockerfile-path apps/api/Dockerfile
+  upuai config set --root-dir apps/api --builder dockerfile --docker-context ../..
   upuai config set --root-dir apps/web --health-check /health`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := requireAuth(); err != nil {
@@ -60,7 +61,7 @@ Examples:
 		// esse pedido indistinguível de não ter passado a flag.
 		timeoutChanged := cmd.Flags().Changed("health-check-timeout")
 		hasSource := flagConfigRootDir != ""
-		hasBuild := flagConfigBuilder != "" || flagConfigDockerfilePath != "" || flagConfigBuildCommand != ""
+		hasBuild := flagConfigBuilder != "" || flagConfigDockerfilePath != "" || flagConfigDockerContext != "" || flagConfigBuildCommand != ""
 		hasDeploy := flagConfigStartCommand != "" || flagConfigHealthCheck != "" || timeoutChanged
 
 		if !hasSource && !hasBuild && !hasDeploy {
@@ -75,6 +76,7 @@ Examples:
 			req.Build = &api.InstanceBuildConfig{
 				Builder:        flagConfigBuilder,
 				DockerfilePath: flagConfigDockerfilePath,
+				DockerContext:  flagConfigDockerContext,
 				BuildCommand:   flagConfigBuildCommand,
 			}
 		}
@@ -155,6 +157,7 @@ image is at .config.source.image.`,
 
 		builder := "railpack (default)"
 		dockerfilePath := "—"
+		dockerContext := "—"
 		buildCommand := "—"
 		rootDir := "—"
 		source := "—"
@@ -171,6 +174,9 @@ image is at .config.source.image.`,
 				}
 				if b.DockerfilePath != "" {
 					dockerfilePath = b.DockerfilePath
+				}
+				if b.DockerContext != "" {
+					dockerContext = b.DockerContext
 				}
 				if b.BuildCommand != "" {
 					buildCommand = b.BuildCommand
@@ -207,6 +213,7 @@ image is at .config.source.image.`,
 			"Source", source,
 			"Builder", builder,
 			"Dockerfile path", dockerfilePath,
+			"Docker context", dockerContext,
 			"Build command", buildCommand,
 			"Root directory", rootDir,
 			"Start command", startCommand,
@@ -223,7 +230,8 @@ image is at .config.source.image.`,
 func init() {
 	configSetCmd.Flags().StringVar(&flagConfigRootDir, "root-dir", "", "Root directory within the repo (for monorepos, e.g. apps/api; . builds from the repo root)")
 	configSetCmd.Flags().StringVar(&flagConfigBuilder, "builder", "", "Build system: dockerfile or railpack")
-	configSetCmd.Flags().StringVar(&flagConfigDockerfilePath, "dockerfile-path", "", "Path to Dockerfile (used with --builder dockerfile)")
+	configSetCmd.Flags().StringVar(&flagConfigDockerfilePath, "dockerfile-path", "", "Path to Dockerfile, relative to the root directory (used with --builder dockerfile)")
+	configSetCmd.Flags().StringVar(&flagConfigDockerContext, "docker-context", "", "Dockerfile build context, relative to the root directory (e.g. ../.. for the repository root)")
 	configSetCmd.Flags().StringVar(&flagConfigBuildCommand, "build-command", "", "Command to build the service")
 	configSetCmd.Flags().StringVar(&flagConfigStartCommand, "start-command", "", "Command to start the service")
 	configSetCmd.Flags().StringVar(&flagConfigHealthCheck, "health-check", "", "HTTP path for health check (e.g. /health)")

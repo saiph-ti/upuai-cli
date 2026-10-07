@@ -12,7 +12,9 @@ type InstanceSourceConfig struct {
 type InstanceBuildConfig struct {
 	Builder        string `json:"builder,omitempty"`
 	DockerfilePath string `json:"dockerfilePath,omitempty"`
-	BuildCommand   string `json:"buildCommand,omitempty"`
+	// Contexto do build Dockerfile, relativo ao root directory (ex.: "../..").
+	DockerContext string `json:"dockerContext,omitempty"`
+	BuildCommand  string `json:"buildCommand,omitempty"`
 }
 
 type InstanceDeployConfig struct {

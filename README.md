@@ -134,7 +134,7 @@ See [Workspaces](#workspaces) for how linked directories pin their workspace.
 |---------|-------|-------------|
 | `deploy` | | Deploy the linked project or a service (`--wait` blocks until a terminal status; `--image <ref>` sets the image of an image service first) |
 | `up` | | Deploy current directory from local source — no git needed (v0.11.0+) |
-| `redeploy` | | Redeploy the latest deployment |
+| `redeploy` | | Redeploy the latest deployment: same commit, current config. Reuses the image of an earlier successful deploy of that commit when nothing that goes into the build changed; `--rebuild` builds it again (v0.28.0+) |
 | `rollback` | | Rollback to a previous deployment |
 | `promote` | | Promote deployment between environments |
 | `down` | | Remove the latest deployment (stop service) |
@@ -152,7 +152,7 @@ See [Workspaces](#workspaces) for how linked directories pin their workspace.
 | `shell` | Open a **local** subshell with service environment variables injected |
 | `ssh` | Open an interactive shell (or run a command) **inside the running container** — `upuai ssh -s api -- bin/rails console`. Auto-allocates a PTY when stdin/stdout are terminals; in a pipe/redirect it runs non-interactively with byte-exact stdout/stderr (`echo x \| upuai ssh -- cat`). Force with `-t/--tty`, disable with `-T/--no-tty`. `--process <name>` targets one process of a multi-process service. `-n/--no-stdin` never attaches stdin (parity with `ssh -n`; needs a command, never allocates a PTY) — use it from CI and agents whose runner leaves stdin open (`upuai ssh -n -- cmd`, or redirect `</dev/null`); a session left waiting on a silent stdin says so on stderr. A session that ends without an exit status is an error, never a silent exit 0. Generic/stack-agnostic; backed by a K8s exec |
 | `config show` | Show the current source (image, or repository and branch) and build/deploy config of the linked service (builder, build/start commands, health check, root directory). `-o json` exposes the image at `.config.source.image`. Alias: `config get` |
-| `config set` | Update build/deploy config. `--root-dir apps/api` sets the build **Root Directory** for a monorepo on an existing github/gitlab service (no recreate needed; `--root-dir .` builds from the repo root); also `--builder`, `--dockerfile-path`, `--build-command`, `--start-command`, `--health-check` |
+| `config set` | Update build/deploy config. `--root-dir apps/api` sets the build **Root Directory** for a monorepo on an existing github/gitlab service (no recreate needed; `--root-dir .` builds from the repo root); also `--builder`, `--dockerfile-path`, `--docker-context` (Dockerfile build context relative to the root directory, e.g. `--root-dir apps/api --builder dockerfile --docker-context ../..` gives apps/api's Dockerfile the repository root; v0.28.0+), `--build-command`, `--start-command`, `--health-check` |
 | `service delete <name>` | Delete **a single service** (and its deployments, volumes, bucket attachments, cluster workloads, domains) without touching the rest of the project. Teardown runs in the background; the service is restorable for 30 days (volumes are not). `-y` skips confirmation. Contrast with `upuai delete` (whole project) and `upuai down` (stop the deployment, keep the service) |
 
 ### Database
@@ -472,8 +472,11 @@ source** (escape hatch). These are separate commands; `up` is no longer an alias
 ### redeploy
 
 ```bash
-upuai redeploy            # Redeploy the latest deployment
+upuai redeploy            # Same commit, current config — reuses the image when build inputs are unchanged
+upuai redeploy --rebuild  # Same commit, built again (v0.28.0+)
 ```
+
+A redeploy reuses the image of an earlier successful deploy of the same commit when nothing that goes into the build changed: build settings (builder, build and start commands, Dockerfile path and context) and build-time variables (scope `both` or `build`). The release command runs again; there is no build. Multi-process (Procfile) services and `upuai up` deploys always build. Set variables the build never reads with `upuai vars set KEY=VAL --scope runtime` so changing them redeploys in about a minute.
 
 ### promote
 
