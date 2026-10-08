@@ -326,6 +326,18 @@ func explainDatabaseError(err error, extName, action string) error {
 		msg += " — contact support to schedule it safely"
 	case "DB_IMAGE_UNAVAILABLE":
 		msg = "the target database image is not available on the platform right now — try again later or contact support"
+	// Endpoint público: só o UNSUPPORTED_ENGINE é do usuário; os demais são
+	// configuração/capacidade da plataforma — nada a corrigir do lado dele.
+	case "PUBLIC_ACCESS_UNSUPPORTED_ENGINE":
+		msg = "public access is available for PostgreSQL and MySQL databases only — Redis and MongoDB are reachable from the services of the same environment"
+	case "PUBLIC_ACCESS_UNAVAILABLE":
+		msg = "public database access is not available on this cluster right now — nothing was changed; contact support"
+	case "PUBLIC_PORT_POOL_EXHAUSTED":
+		msg = "no public port is free for this database right now (platform capacity) — nothing was changed; contact support"
+	case "PUBLIC_PORT_CONFLICT":
+		msg = "the public port reserved for this database is routed to another database — nothing was changed; contact support"
+	case "PUBLIC_PORT_INVALID":
+		msg = "the platform reserved an invalid public port for this database (configuration error) — contact support"
 	default:
 		switch detail("reason") {
 		case reasonDeploymentInProgress:

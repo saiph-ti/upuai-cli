@@ -35,7 +35,8 @@ cli/
 │   ├── run.go                 # Executa comando com env vars injetadas (`-s` opcional, `--` opcional; parse manual via DisableFlagParsing)
 │   ├── shell.go               # Subshell interativo com env vars do service (paridade `railway shell`)
 │   ├── ssh.go                 # Sessão DENTRO do container em execução (`-s`, `--`, PTY auto, `-n` sem stdin; parse manual via DisableFlagParsing)
-│   ├── db.go                  # `db connect` (psql interativo) / `db backup` (pg_dump) / `db restore` (pg_restore) / `db public` — usa endpoint público
+│   ├── db.go                  # `db connect` / `db backup` / `db restore` (despacho por engine: psql/pg_dump/pg_restore ou db_mysql.go) / `db public [status|enable|disable]` — usa endpoint público
+│   ├── db_mysql.go            # MySQL: mysql/mysqldump (sabor Oracle × MariaDB), senha em option file 0600 (--defaults-file, 1º arg), espera serverTlsReady, sonda da rota, formato do dump
 │   ├── db_extensions.go       # `db extensions` (ext) → list, enable, disable, update — extensões Postgres gerenciadas (allowlist da plataforma) + explainDatabaseError
 │   ├── db_update.go           # `db version` (versão viva + atualização pendente) e `db update` (atualização de manutenção, --wait/--wait-timeout)
 │   ├── db_credentials.go      # `db credentials` (creds) → repair, rotate — conta de aplicação do MySQL gerenciado (a senha nunca trafega pela CLI)
@@ -67,10 +68,13 @@ cli/
 │   │   ├── processes.go       # ListProcesses (multi-process service: web/worker/clock/release)
 │   │   ├── variables.go       # ListVariables, SetVariables, DeleteVariable
 │   │   ├── domains.go         # ListDomains, AddDomain, DeleteDomain
-│   │   ├── database.go        # Public access (Get/SetDatabasePublicAccess), extensões (List/Enable/Disable/UpdateDatabaseExtension, timeout próprio de 75s), GetDatabaseVersion, ApplyDatabaseMaintenance
+│   │   ├── database.go        # Public access (Get/SetDatabasePublicAccess; engine vazio = postgresql), extensões (List/Enable/Disable/UpdateDatabaseExtension, timeout próprio de 75s), GetDatabaseVersion, ApplyDatabaseMaintenance
 │   │   ├── tokens.go          # CreateToken, ListTokens, RevokeToken, GetSelfToken (GET /tokens/self — identidade do UPUAI_TOKEN)
 │   │   ├── tenant.go          # ListWorkspaces, SwitchWorkspace, ResolveProjectWorkspace (a API modela como "tenant"; o resto do CLI só fala workspace)
 │   │   └── errors.go          # APIError (+ Code do catálogo) e helpers ErrorCode/StatusCode
+│   ├── cabundle/
+│   │   ├── cabundle.go        # Resolve o --ssl-ca dos clientes MySQL: SSL_CERT_FILE → bundle do SO → raízes Let's Encrypt embutidas (0600 em dir temporário)
+│   │   └── letsencrypt-roots.pem  # ISRG Root X1/X2/YE/YR — fingerprints conferidos no CCADB; trocar exige atualizar o teste
 │   ├── auth/
 │   │   └── token.go           # DecodeToken — lê claims do JWT (id, roles, tenantId/tenantName). NÃO valida assinatura: só para exibir/decidir localmente
 │   ├── config/
@@ -103,7 +107,7 @@ cli/
 | **Projeto** | `init`, `link`, `unlink`, `list` (ls), `open`, `delete`, `status` |
 | **Deploy** | `deploy`, `up` (source local — **não** é alias de deploy), `redeploy`, `rollback`, `promote`, `down` |
 | **Serviço** | `add`, `service delete`, `ps`, `restart`, `logs`, `scale`, `run`, `shell`, `ssh` |
-| **Database** | `db connect` (psql), `db backup` (pg_dump), `db restore` (pg_restore), `db public {enable,disable}`, `db extensions {enable,disable,update}`, `db version`, `db update`, `db credentials {repair,rotate}` |
+| **Database** | `db connect` (psql / mysql), `db backup` (pg_dump / mysqldump), `db restore` (pg_restore / mysql), `db public {status,enable,disable}`, `db extensions {enable,disable,update}`, `db version`, `db update`, `db credentials {repair,rotate}` |
 | **Ambiente** | `environment` (env) → `list`, `switch`, `new`, `delete` |
 | **Configuração** | `variables` (vars/variable) → `list`, `set`, `delete`, `shared {list,enable,disable}` · `domain` (domains) → `list`, `add`, `generate`, `delete` · `config` → `show` (get), `set` |
 | **Agendamento** | `scheduler` (cron/schedulers) → `list`, `create`, `run`, `pause`, `resume`, `delete` |
@@ -439,3 +443,11 @@ Para adicionar um novo framework, adicione ao slice `Frameworks` em `internal/de
 - [ ] Errors wrapped com contexto (`fmt.Errorf("ctx: %w", err)`)
 - [ ] Endpoint adicionado em `internal/api/` (tipo + método no Client)
 - [ ] Se subcomandos: registrar via `parentCmd.AddCommand()` + pai em `rootCmd.AddCommand()`
+
+## Clientes de banco externos (`db connect|backup|restore`)
+
+- O engine vem de `PublicAccessInfo.Engine` (`postgresql` | `mysql`; vazio = API antiga = Postgres). O caminho Postgres é o histórico e tem teste de argv travado (`TestPostgresToolsArgvUnchanged`) — não mude sem querer.
+- **Senha nunca em argv nem em env.** MySQL: option file 0600 num `os.MkdirTemp` (0700) via `runMySQLWithSecrets`, passado como `--defaults-file` no PRIMEIRO argumento (o cliente exige; `--defaults-extra-file` deixaria o `~/.my.cnf` sobrescrever a senha), removido ao fim do processo — também em erro e sinal. `os.Exit` pula defers: devolva o exit code e saia depois da limpeza.
+- **Antes de publicar o banco**, resolva o que pode recusar: cliente local ausente, `--out` ausente (Postgres), dump do engine errado (`fetchPublicAccess` → checagens → `ensureEnabled`).
+- MySQL anterior ao endpoint público reinicia uma vez ao ligar (`serverTlsReady=false`): exige `--yes` ou confirmação e espera o certificado (`waitForServerTLS`).
+- Testes nunca discam host real: `mysqlRouteProbe` é injetado em `resetDBFlags`; clientes falsos via PATH (`db_mysql_unix_test.go`) ou o próprio binário de teste (`TestMySQLHelperProcess`).

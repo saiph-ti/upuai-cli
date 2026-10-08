@@ -1,7 +1,7 @@
 ---
 name: upuai
 description: Deploy, manage, and troubleshoot projects on Upuai Cloud using the upuai CLI. Route-first skill — read the routing table below and follow the matching section.
-version: 1.3.0
+version: 1.4.0
 when-to-use: When the user wants to deploy a project to Upuai, check status/logs, configure env vars or domains, manage databases, roll back, promote between environments, or use the upuai CLI for any task.
 homepage: https://upuai.com.br
 ---
@@ -22,6 +22,7 @@ Read only the section(s) that match the user's intent.
 | "connect to db / backup / restore" | [Database](#database) |
 | "PostGIS / pgvector / Postgres extensions / db update" | [Database](#database) |
 | "MySQL access denied / reset or rotate the database password" | [Database](#database) |
+| "connect to MySQL from my machine / mysqldump / MySQL public access" | [Database](#database) |
 | Promote staging → production | [Environments](#environments) |
 | "project not found" / empty project list / user is in more than one org | [Workspaces](#workspaces) |
 | Anything else | Read `https://upuai.com.br/llms-full.txt` |
@@ -31,7 +32,7 @@ Read only the section(s) that match the user's intent.
 Always invoke `upuai` in non-interactive mode. Without these, prompts will hang in agent environments.
 
 1. **Auth**: always run `upuai whoami` first. If it returns the expected user, you're authenticated — the CLI reads `~/.upuai/credentials.json` and auto-refreshes the JWT on 401. If `whoami` fails, ask the user to run `upuai login` once on their own machine (browser OAuth or email OTP — both interactive), same pattern as `railway login`, `vercel login`, `fly auth login`. For **CI/automation**, the sanctioned headless path is a scoped token: a human runs `upuai token create --name <name> --scope deploy` (add `--project <id>` to scope it to one project, `--expires <days>` for a TTL), then sets the printed secret in `UPUAI_TOKEN` (opaque, long-lived, revocable). `--scope read` mints a read-only token (GET only, and neither `upuai ssh` nor bucket credentials). List with `upuai token list`, revoke with `upuai token revoke <id>`. Never stuff a user JWT into an env var — use `upuai token`.
-2. **Skip confirmations**: pass `-y` / `--yes` on any command that mutates state (`init`, `deploy`, `down`, `delete`, `rollback`, `promote`, `db restore`, `db update`, `db extensions disable`, `vars delete`, `domain delete`).
+2. **Skip confirmations**: pass `-y` / `--yes` on any command that mutates state (`init`, `deploy`, `down`, `delete`, `rollback`, `promote`, `db restore`, `db public enable`, `db update`, `db extensions disable`, `vars delete`, `domain delete`).
 3. **JSON output for parsing**: pass `-o json` on `status`, `logs`, `list`, `vars list`, `domain list`, `env list`, and (when waiting) `deploy --wait -o json`.
 4. **Pre-supply flags on `init`**: when `--yes` is set, `init` requires `--name <slug>`. Pass `--framework <name>` to skip auto-detect prompts. Pass `--repo <owner>/<repo>` (or `--image <ref>`) to create a deployable service in one step instead of an empty placeholder. The CLI errors out with a clear message if a flag is missing rather than hanging on a prompt.
 5. **Block until terminal**: prefer `upuai deploy --wait` over polling `upuai status` yourself — the CLI already handles the polling, status transitions, timeout, and non-zero exit on failure.
@@ -292,16 +293,18 @@ upuai scale 3 --yes        # set replica count to 3
 
 ## Database
 
-The CLI provides managed wrappers around `psql` / `pg_dump` / `pg_restore` that talk to Upuai's public DB endpoint (`<svc>.db.upuai.cloud:5432?sslmode=require`) without exposing raw credentials.
+The CLI provides managed wrappers that talk to Upuai's public DB endpoint with TLS identity verification, for PostgreSQL (`psql` / `pg_dump` / `pg_restore`, `<svc>.db.upuai.cloud:5432`) and MySQL (`mysql` / `mysqldump`, `<svc>.db.upuai.cloud:<own port>`). The engine is detected from the API — the same commands work on both.
 
 ```bash
 upuai db connect --print               # print connection string (script-friendly)
-upuai db connect --output json         # access info as JSON
+upuai db connect --output json         # access info as JSON {engine, host, port, username, password, database, ...}
 upuai db connect --enable              # auto-enable public access if disabled
-upuai db connect                       # interactive psql session (needs TTY — skip in agent flows)
-upuai db backup --out backup.dump      # pg_dump
-upuai db restore -f backup.dump --yes  # pg_restore
-upuai db public                        # is it published? from which origins?
+upuai db connect                       # interactive psql / mysql session (needs TTY — skip in agent flows)
+upuai db backup --out backup.dump      # Postgres: pg_dump (--out required)
+upuai db backup                        # MySQL: mysqldump → <service>-<UTC timestamp>.sql
+upuai db restore backup.dump --yes     # Postgres: pg_restore (-f also works)
+upuai db restore backup.sql --yes      # MySQL: streams the file into mysql
+upuai db public                        # is it published? from which origins? (= db public status)
 upuai db public enable --allow 203.0.113.7 --allow 10.0.0.0/8
 upuai db public enable --any --yes     # open to any IP (no prompt)
 upuai db public disable                # unpublish (route + allowlist removed)
@@ -364,9 +367,28 @@ CLI v0.24.0+.
 
 `db public enable` with no flag keeps the current allowlist — a restricted database is never
 opened by omission. With `--allow`, only those origins reach the database; anything else is
-refused at the edge, before Postgres. Needs owner or admin (CLI v0.23.0+).
+refused at the edge, before the database. Needs owner or admin (CLI v0.23.0+). Reading the
+endpoint (`db public`, `db connect --print`) returns the password, so a machine token needs the
+**deploy** scope — a read-scoped `UPUAI_TOKEN` gets a 403.
 
-For automated tasks, use `--print` / `--output json` to fetch the connection string, then run queries via your own `psql` invocation. Do not run `upuai db connect` without `--print` inside an agent — it opens an interactive subshell.
+**MySQL public access** (CLI v0.29.0+): each MySQL gets its own port on
+`<slug>.db.upuai.cloud` (23306–23505, kept across disable/enable); TLS is verified against the
+server identity (`ssl-mode=VERIFY_IDENTITY`). Rules:
+- A MySQL created before the feature **restarts once (~1 min)** the first time it is enabled, to
+  load the certificate — tell the user first; pass `--yes` (non-interactive). The CLI waits up to
+  3 min for it (`serverTlsReady`); on timeout it exits non-zero: check `upuai db public status`
+  and retry. Never recreate the database to "fix" this.
+- `db connect` / `db backup` / `db restore` need the MySQL client locally (`mysql`, `mysqldump`;
+  macOS `brew install mysql-client`, Debian/Ubuntu `apt install default-mysql-client`). The
+  password goes in a 0600 temp option file, never on the command line. In agent flows prefer
+  `db backup` / `db restore` (non-interactive) or `db connect --print` for the details.
+- `db backup` runs mysqldump with `--single-transaction --routines --events --triggers
+  --set-gtid-purged=OFF --no-tablespaces`: a dump restorable into any MySQL. A pg_dump file is
+  refused on MySQL (and a mysqldump file on Postgres).
+- Redis and MongoDB have no public access (`PUBLIC_ACCESS_UNSUPPORTED_ENGINE`) — reach them from
+  a service in the same environment.
+
+For automated tasks, use `--print` / `--output json` to fetch the connection string, then run queries via your own `psql` / `mysql` invocation. Do not run `upuai db connect` without `--print` inside an agent — it opens an interactive subshell.
 
 ## Workspaces
 

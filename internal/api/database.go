@@ -6,9 +6,20 @@ import (
 	"time"
 )
 
+// Engines do endpoint público (PublicAccessInfo.Engine).
+const (
+	DatabaseEnginePostgres = "postgresql"
+	DatabaseEngineMySQL    = "mysql"
+)
+
 // PublicAccessInfo mirrors the platform API contract for the Public DB Endpoint feature.
-// Runbook: upuai-core/docs/runbooks/2026-04-24-public-db-endpoint.md
+// Runbooks: upuai-core/docs/runbooks/2026-04-24-public-db-endpoint.md (Postgres,
+// SNI na 5432) e 2026-10-07-mysql-public-endpoint.md (MySQL, uma porta do pool
+// 23306–23505 por banco, estável entre desligar e religar).
 type PublicAccessInfo struct {
+	// Engine: "postgresql" | "mysql". APIs anteriores ao MySQL público não
+	// mandam o campo — o decode normaliza vazio para "postgresql".
+	Engine           string `json:"engine"`
 	Enabled          bool   `json:"enabled"`
 	Host             string `json:"host"`
 	Port             int    `json:"port"`
@@ -16,6 +27,29 @@ type PublicAccessInfo struct {
 	// AllowedCidrs: origens autorizadas a conectar. Vazio = qualquer IP, que é o
 	// comportamento histórico do toggle.
 	AllowedCidrs []string `json:"allowedCidrs,omitempty"`
+	// Campos da connection string em separado (vazios quando desligado). O
+	// cliente MySQL recebe cada um por flag — e a senha nunca por argv/env.
+	Username string `json:"username"`
+	Password string `json:"password"`
+	Database string `json:"database"`
+	// ServerTLSReady: false enquanto um MySQL criado antes do endpoint público
+	// reinicia (uma vez, ~1 min) para carregar o certificado; desligado com
+	// false = ligar vai reiniciar o banco. Sempre true no Postgres — e ausente
+	// (false) em APIs antigas, por isso só é consultado para MySQL.
+	ServerTLSReady bool `json:"serverTlsReady"`
+}
+
+// IsMySQL: o endpoint é de um MySQL gerenciado.
+func (p *PublicAccessInfo) IsMySQL() bool {
+	return p != nil && p.Engine == DatabaseEngineMySQL
+}
+
+// normalize aplica o default de APIs antigas: sem engine = Postgres.
+func (p *PublicAccessInfo) normalize() *PublicAccessInfo {
+	if p.Engine == "" {
+		p.Engine = DatabaseEnginePostgres
+	}
+	return p
 }
 
 type setPublicAccessRequest struct {
@@ -31,7 +65,7 @@ func (c *Client) GetDatabasePublicAccess(envID, serviceID string) (*PublicAccess
 	if err := c.Get(fmt.Sprintf("/environments/%s/services/%s/database/public-access", envID, serviceID), &info); err != nil {
 		return nil, err
 	}
-	return &info, nil
+	return info.normalize(), nil
 }
 
 // SetDatabasePublicAccess publica (ou retira) o endpoint público. allowedCIDRs
@@ -48,7 +82,7 @@ func (c *Client) SetDatabasePublicAccess(envID, serviceID string, enabled bool, 
 	); err != nil {
 		return nil, err
 	}
-	return &info, nil
+	return info.normalize(), nil
 }
 
 // ─── Extensões gerenciadas (Postgres) ────────────────────────────────────────

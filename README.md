@@ -159,14 +159,14 @@ See [Workspaces](#workspaces) for how linked directories pin their workspace.
 
 | Command | Description |
 |---------|-------------|
-| `db connect` | Open an interactive `psql` session against the linked database |
-| `db connect --print` | Print the public connection string (script-friendly) |
-| `db backup --out <file>` | `pg_dump` the database via the public endpoint |
-| `db restore -f <file>` | `pg_restore` a dump file via the public endpoint |
-| `db public` | Show the public endpoint and which origins may connect |
+| `db connect` | Open an interactive `psql` (PostgreSQL) or `mysql` (MySQL) session against the linked database |
+| `db connect --print` | Print the public connection string (script-friendly); MySQL also prints host, port, user and database |
+| `db backup --out <file>` | PostgreSQL: `pg_dump` (custom format) via the public endpoint. MySQL: `mysqldump`; `--out` defaults to `<service>-<UTC timestamp>.sql` |
+| `db restore <file>` / `-f <file>` | PostgreSQL: `pg_restore`. MySQL: streams the `.sql` file into `mysql`. A dump of the other engine is refused |
+| `db public` / `db public status` | Show the public endpoint and which origins may connect (MySQL: also user, database and TLS state) |
 | `db public enable --allow <ip\|cidr>` | Publish restricted to those origins (repeatable; replaces the list) |
 | `db public enable --any` | Publish open to any IP |
-| `db public disable` | Remove the public endpoint and its allowlist |
+| `db public disable` | Remove the public endpoint and its allowlist (a MySQL keeps its port for the next enable) |
 | `db extensions` | List the managed Postgres extensions (PostGIS, pgvector, pg_trgm, ...) and their state: `enabled`, `available` or `unavailable` (needs `db update`). `-o json` for scripts |
 | `db extensions enable <name>` | `CREATE EXTENSION ... CASCADE` in the `app` database — instant, no restart (e.g. `postgis`) |
 | `db extensions disable <name>` | `DROP EXTENSION ... RESTRICT` — refused while anything depends on it (lists the dependents); never cascades. `-y` skips confirmation |
@@ -611,13 +611,15 @@ Inside the subshell, run anything that reads env vars: `printenv DATABASE_URL`, 
 ### db
 
 ```bash
-upuai db connect                      # Interactive psql session
+upuai db connect                      # Interactive psql (PostgreSQL) / mysql (MySQL) session
 upuai db connect --print              # Print connection string and exit
 upuai db connect --output json        # Emit access info as JSON
 upuai db connect --enable             # Auto-enable public access if disabled
-upuai db backup --out file.dump       # pg_dump → file.dump
-upuai db restore -f file.dump         # pg_restore from file.dump
-upuai db restore -f file.dump -y      # Skip confirmation
+upuai db backup --out file.dump       # PostgreSQL: pg_dump → file.dump
+upuai db backup                       # MySQL: mysqldump → <service>-<UTC timestamp>.sql
+upuai db restore -f file.dump         # PostgreSQL: pg_restore from file.dump
+upuai db restore backup.sql -y        # MySQL: mysql < backup.sql, skip confirmation
+upuai db public status                # Public endpoint, allowed origins (MySQL: user, database, TLS)
 upuai db extensions                   # Managed Postgres extensions and their state
 upuai db extensions enable postgis    # CREATE EXTENSION postgis (instant, no restart)
 upuai db extensions disable postgis   # DROP EXTENSION ... RESTRICT (asks confirmation)
@@ -629,6 +631,13 @@ upuai db credentials rotate --yes     # Managed MySQL: new password, then redepl
 ```
 
 `db connect` requires `psql` on `$PATH`; `db backup` / `db restore` require `pg_dump` / `pg_restore` (postgresql-client / libpq). Public access is auto-prompted when disabled — confirm or pass `--enable`.
+
+**MySQL public access.** Each managed MySQL is published on its own port of `<slug>.db.upuai.cloud` (23306–23505, stable across disable/enable); TLS is terminated by the database with the Let's Encrypt wildcard and the client verifies the server identity (`--ssl-mode=VERIFY_IDENTITY`; the connection string carries `?ssl-mode=VERIFY_IDENTITY`). The commands need the MySQL client on `$PATH` — macOS `brew install mysql-client` (keg-only: add `$(brew --prefix mysql-client)/bin` to `PATH`), Debian/Ubuntu `sudo apt install default-mysql-client` (or `mysql-client`), Windows the MySQL Installer. MariaDB's client (the `mysql` of Debian/Ubuntu) is detected and gets `--ssl --ssl-verify-server-cert` instead.
+- The password never goes on the command line or in the environment: it is written to a `0600` option file in a private temporary directory, passed as `--defaults-file` (first argument, so `~/.my.cnf` cannot override it) and removed when the client exits — also on errors and signals.
+- CA bundle for `--ssl-ca`: `SSL_CERT_FILE` if set and readable, else the system bundle (`/etc/ssl/cert.pem`, `/etc/ssl/certs/ca-certificates.crt`, `/etc/pki/tls/certs/ca-bundle.crt`, `/etc/ssl/ca-bundle.pem`), else the Let's Encrypt roots embedded in the CLI (ISRG Root X1, X2, YE, YR — this is what Windows uses).
+- A MySQL created before public access existed restarts **once** (about 1 minute) the first time it is enabled, to load the certificate. `db public enable` / `db connect` ask for confirmation (`--yes` in scripts) and wait up to 3 minutes for it; on timeout they exit non-zero — check `upuai db public status` and retry. Right after enabling, the edge takes a couple of seconds to route the new port; `db connect|backup|restore` wait for the server greeting before starting the client.
+- `db backup` runs `mysqldump --single-transaction --routines --events --triggers --set-gtid-purged=OFF --no-tablespaces` (MariaDB's mysqldump has no `--set-gtid-purged`; it is skipped), so the dump restores into any MySQL server; a failed dump leaves no partial file. `db restore` streams the file into `mysql` (a MariaDB dump's sandbox first line is dropped for Oracle's client).
+- Reading the public endpoint returns the credentials, so an API token needs the **deploy** scope (`upuai token create --scope deploy`); a read-scoped token gets a clear 403. Redis and MongoDB have no public access.
 
 Extensions are managed in the `app` database (the one in `DATABASE_URL`) from a curated list; the platform's current Postgres image ships PostGIS, pgvector and 25+ others, so enabling one never restarts the database. A database still on an older image shows extensions such as PostGIS as `unavailable` — run `upuai db update` (one restart) first. Your app's migrations can also run `CREATE EXTENSION IF NOT EXISTS postgis;` (the `DATABASE_URL` user owns the `app` database) — the dashboard and `db extensions` show it either way. Extensions that need `shared_preload_libraries` (pg_cron, pg_stat_statements, pgaudit) are not offered; other databases remain available over SQL with the database's own credentials.
 
@@ -698,7 +707,7 @@ Common workflows mapped to `upuai`:
 | `railway deploy` (connected repo) | `upuai deploy` |
 | `railway logs` | `upuai logs` |
 | `railway add --database postgres` | `upuai add` (interactive wizard, type=database) |
-| `railway connect [svc]` (interactive psql) | `upuai db connect` |
+| `railway connect [svc]` (interactive psql / mysql) | `upuai db connect` |
 | `railway shell -s <svc>` | `upuai shell -s <svc>` |
 | `railway run <cmd>` | `upuai run <cmd>` |
 | `railway variable list -s <svc>` | `upuai variables list -s <svc>` |
