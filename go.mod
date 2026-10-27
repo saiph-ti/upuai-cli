@@ -1,6 +1,6 @@
 module github.com/upuai-cloud/cli
 
-go 1.26.6
+go 1.26.10
 
 require (
 	github.com/charmbracelet/bubbles v1.0.0
