@@ -90,7 +90,9 @@ func formatServiceStatus(status string) string {
 	switch status {
 	case "running", "active", "healthy", "success":
 		return ui.StatusRunning.Render("● " + status)
-	case "failed", "build_failed", "crashed", "error":
+	// unhealthy: the web service is up but no replica answers its health check
+	// (the platform's "Fora do ar"); as broken as a crash for whoever uses it.
+	case "failed", "build_failed", "crashed", "unhealthy", "error":
 		return ui.StatusStopped.Render("● " + status)
 	case "queued", "initializing", "building", "releasing", "deploying", "candidate_ready", "pending":
 		return ui.StatusBuilding.Render("● " + status)
