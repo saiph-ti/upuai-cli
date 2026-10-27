@@ -1,7 +1,7 @@
 ---
 name: upuai
 description: Deploy, manage, and troubleshoot projects on Upuai Cloud using the upuai CLI. Route-first skill — read the routing table below and follow the matching section.
-version: 1.4.0
+version: 1.4.1
 when-to-use: When the user wants to deploy a project to Upuai, check status/logs, configure env vars or domains, manage databases, roll back, promote between environments, or use the upuai CLI for any task.
 homepage: https://upuai.com.br
 ---
@@ -179,11 +179,12 @@ Decision tree for "it's not working":
 2. **Status `failed` or `build_failed`?** → `upuai logs -n 100 --build` shows the build output; `upuai logs -n 100 --deploy` shows the release-phase + rollout log; `upuai logs -n 100` shows runtime logs. Common causes:
    - **Build failure** (`build_failed`): missing `buildCommand` for the framework, missing dependency, wrong Node/Python version. Suggest `upuai.toml` with explicit `[build]` block — see [Configure](#configure).
    - **Release phase fail** (`failed` during release): if `releaseCommand` is set (e.g. `prisma migrate deploy`), it runs before the rollout. Check `--deploy` logs for the release-phase output.
-   - **Runtime crash** (deployment is `success` but service unhealthy / restarting): wrong `startCommand`, missing env var, port mismatch. Check `upuai vars list -o json` and confirm the app listens on `process.env.PORT` (Upuai injects `PORT`).
+   - **Runtime crash** (deployment is `success` but the service is `crashed` / restarting): wrong `startCommand`, missing env var, port mismatch. Check `upuai vars list -o json` and confirm the app listens on `process.env.PORT` (Upuai injects `PORT`).
 3. **Status `success` but URL doesn't respond 200?**
    - Service may bind to wrong port → ensure app reads `process.env.PORT`.
    - Health check path may be wrong → set `healthCheckPath` in `upuai.toml`.
    - Custom domain not propagated yet — try the `*.upuai.com.br` URL from the deployment object first.
+   - Service status `unhealthy` (dashboard "Down") → it was serving, then no instance answered its health check for 2 minutes (hung process, exhausted pool, or the app answering errors). With no response at all (timeout or connection refused) the platform restarts it on its own after 5 minutes, at most once every 30 minutes, and e-mails whoever receives deploy-failure notifications. An app answering errors is not restarted: read `upuai logs -n 100`, fix it, or `upuai restart --yes`.
 4. **Recent change broke it?** → `upuai rollback --list` to see deployments, then `upuai rollback --to <id> --yes` to revert.
 5. **Deeper inspection** → `upuai status -o json` exposes a full timeline (git clone / build / release / deploy stages) when the CLI is >= 0.4.0. Use it to pinpoint which stage failed before reaching for logs.
 
