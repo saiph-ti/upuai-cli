@@ -954,15 +954,14 @@ func TestDBConnectPrintMySQL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Host", "orders.db.upuai.cloud", "Port", "23307", "User", "app", "Database",
-		"mysql://app:" + testMySQLPassword + "@orders.db.upuai.cloud:23307/app?ssl-mode=VERIFY_IDENTITY"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("saída sem %q:\n%s", want, out)
-		}
+	want := "mysql://app:" + testMySQLPassword + "@orders.db.upuai.cloud:23307/app?ssl-mode=VERIFY_IDENTITY\n"
+	if out != want {
+		t.Fatalf("stdout must contain only the connection string: %q", out)
 	}
+
 }
 
-func TestDBConnectPrintPostgresUnchanged(t *testing.T) {
+func TestDBConnectPrintPostgresOnlyConnectionString(t *testing.T) {
 	newPublicAccessFake(t, func(method string, n int, body string) (int, string) {
 		return 200, pgLegacyJSON
 	})
@@ -972,8 +971,8 @@ func TestDBConnectPrintPostgresUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "postgresql://app:pw@abc123xy.db.upuai.cloud:5432/app?sslmode=verify-full"
-	if !strings.Contains(out, want) || strings.Contains(out, "User") || strings.Contains(out, "Database") {
+	want := "postgresql://app:pw@abc123xy.db.upuai.cloud:5432/app?sslmode=verify-full\n"
+	if out != want {
 		t.Fatalf("saída:\n%s", out)
 	}
 }
@@ -1089,5 +1088,42 @@ func TestDBPublicEnableUnsupportedEngine(t *testing.T) {
 	captureStdout(t, func() { err = dbPublicEnableCmd.RunE(dbPublicEnableCmd, nil) })
 	if err == nil || !strings.Contains(err.Error(), "PostgreSQL and MySQL databases only") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestDBConnectPrintAfterEnable(t *testing.T) {
+	for _, engine := range []string{"postgres", "mysql"} {
+		t.Run(engine, func(t *testing.T) {
+			reqs := newPublicAccessFake(t, func(method string, n int, body string) (int, string) {
+				if engine == "mysql" {
+					return 200, mysqlAccessJSON(method == http.MethodPut, true)
+				}
+				if method == http.MethodGet {
+					return 200, pgDisabledLegacyJSON
+				}
+				return 200, pgLegacyJSON
+			})
+			dbConnectPrint = true
+			dbAutoEnable = true
+			var err error
+			out := captureStdout(t, func() { err = dbConnectCmd.RunE(dbConnectCmd, nil) })
+			if err != nil {
+				t.Fatal(err)
+			}
+			payload := pgLegacyJSON
+			if engine == "mysql" {
+				payload = mysqlAccessJSON(true, true)
+			}
+			var info api.PublicAccessInfo
+			if err := json.Unmarshal([]byte(payload), &info); err != nil {
+				t.Fatal(err)
+			}
+			if out != info.ConnectionString+"\n" {
+				t.Fatalf("extra output: %q", out)
+			}
+			if countMethod(*reqs, http.MethodPut) != 1 {
+				t.Fatalf("enable requests: %+v", *reqs)
+			}
+		})
 	}
 }

@@ -111,12 +111,6 @@ or an interactive confirmation.`,
 			return nil
 		}
 		if dbConnectPrint {
-			if info.IsMySQL() {
-				ui.PrintKeyValue("Host", info.Host, "Port", fmt.Sprintf("%d", info.Port), "User", info.Username, "Database", info.Database)
-			} else {
-				ui.PrintKeyValue("Host", info.Host, "Port", fmt.Sprintf("%d", info.Port))
-			}
-			fmt.Println()
 			fmt.Println(info.ConnectionString)
 			return nil
 		}
@@ -389,8 +383,13 @@ func (s *publicAccessSession) ensureEnabled() error {
 	}
 	s.info = info
 	s.routeMayLag = true
-	ui.PrintSuccess(fmt.Sprintf("public access enabled at %s:%d", info.Host, info.Port))
-	ui.PrintInfo("open to any IP — restrict with: upuai db public enable --allow <cidr>")
+	if dbConnectPrint || getOutputFormat() == ui.FormatJSON {
+		ui.PrintNotice(fmt.Sprintf("public access enabled at %s:%d", info.Host, info.Port))
+		ui.PrintNotice("open to any IP — restrict with: upuai db public enable --allow <cidr>")
+	} else {
+		ui.PrintSuccess(fmt.Sprintf("public access enabled at %s:%d", info.Host, info.Port))
+		ui.PrintInfo("open to any IP — restrict with: upuai db public enable --allow <cidr>")
+	}
 	if info.IsMySQL() && !info.ServerTLSReady {
 		return s.waitForServerTLS()
 	}
@@ -751,12 +750,11 @@ func runLibpqTool(toolName string, c *exec.Cmd) error {
 	}
 }
 
-// withSystemTrustStore garante que a connection string use o trust store do OS
-// quando sslmode=verify-full. libpq por padrão exige `~/.postgresql/root.crt`,
-// que ninguém tem em macOS/Linux/Windows fresh — sem `sslrootcert=system` o
-// psql/pg_dump/pg_restore falha out-of-the-box. O orchestrator novo já inclui,
-// mas mantemos isso como safety-net pra clientes apontando pra orchestrators
-// antigos. Idempotente: no-op se já tiver `sslrootcert=`.
+// withSystemTrustStore seleciona as raízes da implementação SSL do cliente
+// quando verify-full não tem CA explícita. No Windows/OpenSSL, pode ser preciso
+// informar um bundle PEM (ex.: certifi), preservando verify-full. O orchestrator
+// novo já inclui system; isto cobre respostas antigas. Nunca substitui um
+// sslrootcert fornecido pelo cliente.
 func withSystemTrustStore(connStr string) string {
 	if !strings.Contains(connStr, "sslmode=verify-full") {
 		return connStr

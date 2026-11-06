@@ -632,6 +632,29 @@ upuai db credentials rotate --yes     # Managed MySQL: new password, then redepl
 
 `db connect` requires `psql` on `$PATH`; `db backup` / `db restore` require `pg_dump` / `pg_restore` (postgresql-client / libpq). Public access is auto-prompted when disabled — confirm or pass `--enable`.
 
+`db connect --print` writes only the connection string and a newline to stdout, for both PostgreSQL and MySQL. Progress and access-enabling notices go to stderr. `--output json` takes precedence and returns the full access object.
+
+**PostgreSQL from Python on Windows.** Public connections keep `sslmode=verify-full`. The default `sslrootcert=system` uses the roots of the client's SSL library; an OpenSSL/libpq build does not necessarily read the Windows certificate store. If psycopg reports `certificate verify failed`, supply a maintained PEM CA bundle explicitly. With `psycopg` and `certifi` installed in your Python environment:
+
+```python
+import os
+import certifi
+import psycopg
+
+# DATABASE_URL is your public connection string, supplied securely.
+# Keyword arguments override sslrootcert=system in that string.
+with psycopg.connect(
+    os.environ["DATABASE_URL"],
+    sslmode="verify-full",
+    sslrootcert=certifi.where(),
+) as conn:
+    with conn.cursor() as cur:
+        cur.execute("SELECT 1")
+        assert cur.fetchone() == (1,)
+```
+
+Keep `certifi` updated. For other libpq clients, replace `sslrootcert=system` with the PEM file path (URL-encode it if used in a URI). Do not disable certificate or hostname verification. See [libpq's sslrootcert documentation](https://www.postgresql.org/docs/18/libpq-connect.html#LIBPQ-CONNECT-SSLROOTCERT).
+
 **MySQL public access.** Each managed MySQL is published on its own port of `<slug>.db.upuai.cloud` (23306–23505, stable across disable/enable); TLS is terminated by the database with the Let's Encrypt wildcard and the client verifies the server identity (`--ssl-mode=VERIFY_IDENTITY`; the connection string carries `?ssl-mode=VERIFY_IDENTITY`). The commands need the MySQL client on `$PATH` — macOS `brew install mysql-client` (keg-only: add `$(brew --prefix mysql-client)/bin` to `PATH`), Debian/Ubuntu `sudo apt install default-mysql-client` (or `mysql-client`), Windows the MySQL Installer. MariaDB's client (the `mysql` of Debian/Ubuntu) is detected and gets `--ssl --ssl-verify-server-cert` instead.
 - The password never goes on the command line or in the environment: it is written to a `0600` option file in a private temporary directory, passed as `--defaults-file` (first argument, so `~/.my.cnf` cannot override it) and removed when the client exits — also on errors and signals.
 - CA bundle for `--ssl-ca`: `SSL_CERT_FILE` if set and readable, else the system bundle (`/etc/ssl/cert.pem`, `/etc/ssl/certs/ca-certificates.crt`, `/etc/pki/tls/certs/ca-bundle.crt`, `/etc/ssl/ca-bundle.pem`), else the Let's Encrypt roots embedded in the CLI (ISRG Root X1, X2, YE, YR — this is what Windows uses).
