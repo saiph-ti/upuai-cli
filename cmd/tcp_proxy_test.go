@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"slices"
 	"testing"
 
@@ -8,7 +9,8 @@ import (
 )
 
 // Um proxy restrito nunca é aberto por omissão: sem --allow/--any a lista atual
-// vai de novo; --any abre; --allow substitui (normalizado).
+// vai de novo; num proxy desligado a escolha é obrigatória (E2E 23/11: desligar
+// e religar sem flag abria para qualquer IP); --any abre; --allow substitui.
 func TestResolveTcpProxyAllowList(t *testing.T) {
 	reset := func() { tcpProxyAllow, tcpProxyAllowAny = nil, false }
 	t.Cleanup(reset)
@@ -19,8 +21,13 @@ func TestResolveTcpProxyAllowList(t *testing.T) {
 		t.Fatalf("omissão = %v, %v; want a lista atual", got, err)
 	}
 	reset()
+	if _, err := resolveTcpProxyAllowList(&api.TcpProxyInfo{}); !errors.Is(err, errTcpProxyAllowRequired) {
+		t.Fatalf("desligado sem flags = %v; want errTcpProxyAllowRequired", err)
+	}
+	reset()
+	tcpProxyAllowAny = true
 	if got, err := resolveTcpProxyAllowList(&api.TcpProxyInfo{}); err != nil || len(got) != 0 {
-		t.Fatalf("desligado sem flags = %v, %v; want vazio", got, err)
+		t.Fatalf("desligado com --any = %v, %v; want aberto", got, err)
 	}
 	reset()
 	tcpProxyAllowAny = true

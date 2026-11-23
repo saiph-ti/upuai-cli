@@ -183,8 +183,7 @@ See [Workspaces](#workspaces) for how linked directories pin their workspace.
 | Command | Description |
 |---------|-------------|
 | `tcp-proxy` / `tcp-proxy status` | Show the public TCP port of the linked web service (`proxy.upuai.cloud:<port>`), the application port and which origins may connect |
-| `tcp-proxy enable` | Publish a public TCP port that forwards raw TCP (no HTTP, no platform TLS) to the service port; `--port N` forwards to another port of the app |
-| `tcp-proxy enable --allow <ip\|cidr>` / `--any` | Restrict to those origins (repeatable; replaces the list) or open to any IP. With neither, an enabled proxy keeps its allowlist |
+| `tcp-proxy enable --allow <ip\|cidr>` / `--any` | Publish a public TCP port that forwards raw TCP (no HTTP, no platform TLS) to the service port, for those origins (repeatable; replaces the list) or for any IP. Turning on a proxy that is off requires one of the two; on a proxy that is on, neither keeps the allowlist. `--port N` forwards to another port of the app |
 | `tcp-proxy disable` | Remove the public port (it stays reserved: enabling again keeps the same address) |
 
 Paid plans; owner/admin role (API tokens: deploy scope). Every source IP is capped at 1000 concurrent connections. For devices that only speak `ws://`, MQTT or custom protocols — with TLS support, prefer `wss://` on the service's HTTPS domain.

@@ -26,9 +26,10 @@ var tcpProxyCmd = &cobra.Command{
 for what does not speak HTTPS: devices on ws://, MQTT, custom protocols.
 
   upuai tcp-proxy                     show the current state
-  upuai tcp-proxy enable              publish (application port = the service port)
-  upuai tcp-proxy enable --port 9000  forward to another port of the app
   upuai tcp-proxy enable --allow 203.0.113.7 --allow 198.51.100.0/24
+                                      publish for those origins (application port = the service port)
+  upuai tcp-proxy enable --any        publish for any IP
+  upuai tcp-proxy enable --port 9000  forward to another port of the app (proxy already on)
   upuai tcp-proxy disable
 
 The public port is reserved for the service and stays the same across
@@ -74,8 +75,10 @@ var tcpProxyEnableCmd = &cobra.Command{
   --allow X   only these origins connect (IP or CIDR, repeatable)
   --any       open to any IP
 
-Without --allow/--any, an enabled proxy keeps its current allowlist: a
-restricted port is never opened by omission.`,
+Turning on a proxy that is off asks for --allow or --any: who can connect
+is always an explicit choice (disabling drops the allowlist; the port stays
+reserved). On a proxy that is on, enable without --allow/--any keeps the
+current allowlist: a restricted port is never opened by omission.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := requireAuth(); err != nil {
 			return err
@@ -140,8 +143,14 @@ var tcpProxyDisableCmd = &cobra.Command{
 	},
 }
 
+// errTcpProxyAllowRequired: ligar um proxy desligado sem dizer quem conecta.
+// Desligar apaga a allowlist; religar sem flag abriria para qualquer IP uma
+// porta que antes era restrita — por isso a escolha é explícita (o painel faz
+// o mesmo com a confirmação "aberto a qualquer IP").
+var errTcpProxyAllowRequired = fmt.Errorf("the TCP proxy is off: choose who can connect with --allow <ip|cidr> (repeatable) or --any")
+
 // resolveTcpProxyAllowList: --any zera (aberto), --allow substitui, nenhum dos
-// dois PRESERVA a lista de um proxy ligado — mesma regra do `db public enable`.
+// dois PRESERVA a lista de um proxy ligado e é recusado num proxy desligado.
 func resolveTcpProxyAllowList(current *api.TcpProxyInfo) ([]string, error) {
 	if tcpProxyAllowAny {
 		if len(tcpProxyAllow) > 0 {
@@ -155,7 +164,7 @@ func resolveTcpProxyAllowList(current *api.TcpProxyInfo) ([]string, error) {
 	if current != nil && current.Enabled {
 		return current.AllowedCidrs, nil
 	}
-	return nil, nil
+	return nil, errTcpProxyAllowRequired
 }
 
 func printTcpProxy(info *api.TcpProxyInfo, format ui.OutputFormat) {
@@ -167,7 +176,7 @@ func printTcpProxy(info *api.TcpProxyInfo, format ui.OutputFormat) {
 	if !info.Enabled {
 		ui.PrintKeyValue("TCP proxy", "disabled")
 		fmt.Println()
-		ui.PrintInfo("Publish with: " + ui.Accent.Render("upuai tcp-proxy enable"))
+		ui.PrintInfo("Publish with: " + ui.Accent.Render("upuai tcp-proxy enable --allow <ip|cidr>") + " (or --any)")
 		fmt.Println()
 		return
 	}
