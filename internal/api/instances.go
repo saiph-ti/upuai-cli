@@ -24,6 +24,9 @@ type InstanceDeployConfig struct {
 	// com significado: "volte ao default da plataforma". Com int puro não havia
 	// como desfazer um ajuste — só substituí-lo por outro número.
 	HealthCheckTimeout *int `json:"healthCheckTimeout,omitempty"`
+	// Segundos entre o SIGTERM e o SIGKILL de cada réplica (1..300). Três
+	// estados (ver OptionalInt): ausente não mexe, null volta ao padrão de 30s.
+	ShutdownTimeoutSeconds OptionalInt `json:"shutdownTimeoutSeconds,omitzero"`
 }
 
 type UpdateInstanceRequest struct {

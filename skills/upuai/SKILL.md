@@ -200,6 +200,7 @@ upuai restart --yes                 # restart service (clears in-memory state)
 upuai rollback --list               # list deployments for rollback
 upuai rollback --to <deploy-id> --yes
 upuai config show                   # inspect builder/commands/health/root-dir
+upuai config set --shutdown-timeout 120  # drain WebSocket/in-flight work up to 2 min on deploy/scale down (1..300, 0 = default 30; applies from the next deploy; CLI v0.31.0+)
 upuai config set --root-dir apps/api  # set monorepo build Root Directory on an existing github/gitlab service (`.` = repo root)
 upuai service delete <name> --yes   # delete ONE service (deployments+volumes+buckets+domains) — NOT the whole project
 ```
@@ -230,6 +231,8 @@ startCommand = "node dist/server.js"
 releaseCommand = "pnpm exec prisma migrate deploy"
 releaseTimeoutSeconds = 300
 healthCheckPath = "/health"
+healthCheckTimeout = 300        # boot window, default 300, max 600
+shutdownTimeoutSeconds = 30     # SIGTERM -> SIGKILL per replica, default 30, max 300
 
 # Response headers and path redirects applied at the edge (Traefik), before the
 # app — works for static sites and server apps alike. The platform already sends

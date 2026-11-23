@@ -17,6 +17,7 @@ var (
 	flagConfigStartCommand       string
 	flagConfigHealthCheck        string
 	flagConfigHealthCheckTimeout int
+	flagConfigShutdownTimeout    int
 	flagConfigRootDir            string
 	configService                string
 )
@@ -38,7 +39,8 @@ Examples:
   upuai config set --build-command "pnpm install && pnpm build" --start-command "node dist/server.js"
   upuai config set --root-dir apps/api
   upuai config set --root-dir apps/api --builder dockerfile --docker-context ../..
-  upuai config set --root-dir apps/web --health-check /health`,
+  upuai config set --root-dir apps/web --health-check /health
+  upuai config set --shutdown-timeout 120   # drain long-lived connections for up to 2 min`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := requireAuth(); err != nil {
 			return err
@@ -60,12 +62,18 @@ Examples:
 		// significa "volte ao default da plataforma", e comparar com zero tornava
 		// esse pedido indistinguível de não ter passado a flag.
 		timeoutChanged := cmd.Flags().Changed("health-check-timeout")
+		// Mesma leitura por `Changed`: `--shutdown-timeout 0` = volte ao padrão
+		// (vai como null — 0 não é um tempo de desligamento válido na API).
+		shutdownChanged := cmd.Flags().Changed("shutdown-timeout")
+		if shutdownChanged && (flagConfigShutdownTimeout < 0 || flagConfigShutdownTimeout > maxShutdownTimeoutSeconds) {
+			return fmt.Errorf("--shutdown-timeout must be between 1 and %d seconds (0 restores the default of %ds)", maxShutdownTimeoutSeconds, defaultShutdownTimeoutSeconds)
+		}
 		hasSource := flagConfigRootDir != ""
 		hasBuild := flagConfigBuilder != "" || flagConfigDockerfilePath != "" || flagConfigDockerContext != "" || flagConfigBuildCommand != ""
-		hasDeploy := flagConfigStartCommand != "" || flagConfigHealthCheck != "" || timeoutChanged
+		hasDeploy := flagConfigStartCommand != "" || flagConfigHealthCheck != "" || timeoutChanged || shutdownChanged
 
 		if !hasSource && !hasBuild && !hasDeploy {
-			return fmt.Errorf("no configuration flags provided — use --builder, --build-command, --start-command, --health-check, or --root-dir")
+			return fmt.Errorf("no configuration flags provided — use --builder, --build-command, --start-command, --health-check, --shutdown-timeout, or --root-dir")
 		}
 
 		req := &api.UpdateInstanceRequest{}
@@ -87,6 +95,13 @@ Examples:
 			}
 			if timeoutChanged {
 				req.Deploy.HealthCheckTimeout = &flagConfigHealthCheckTimeout
+			}
+			if shutdownChanged {
+				if flagConfigShutdownTimeout == 0 {
+					req.Deploy.ShutdownTimeoutSeconds = api.OptionalIntNull()
+				} else {
+					req.Deploy.ShutdownTimeoutSeconds = api.OptionalIntValue(flagConfigShutdownTimeout)
+				}
 			}
 		}
 
@@ -167,6 +182,7 @@ image is at .config.source.image.`,
 		// não havia como conferir o valor sem `--output json`. Quem ajustou um
 		// valor lia a mesma tela de antes e concluía que o comando não pegou.
 		healthCheckTimeout := "300s (default)"
+		shutdownTimeout := fmt.Sprintf("%ds (default)", defaultShutdownTimeoutSeconds)
 		if inst.Config != nil {
 			if b := inst.Config.Build; b != nil {
 				if b.Builder != "" {
@@ -205,6 +221,9 @@ image is at .config.source.image.`,
 				if t := d.HealthCheckTimeout; t != nil && *t > 0 {
 					healthCheckTimeout = fmt.Sprintf("%ds", *t)
 				}
+				if v, ok := d.ShutdownTimeoutSeconds.Value(); ok {
+					shutdownTimeout = fmt.Sprintf("%ds", v)
+				}
 			}
 		}
 
@@ -219,6 +238,7 @@ image is at .config.source.image.`,
 			"Start command", startCommand,
 			"Health check", healthCheck,
 			"Health check timeout", healthCheckTimeout,
+			"Shutdown timeout", shutdownTimeout,
 		)
 		fmt.Println()
 		ui.PrintInfo("Edit with: " + ui.Accent.Render("upuai config set --builder <railpack|dockerfile> ..."))
@@ -236,8 +256,16 @@ func init() {
 	configSetCmd.Flags().StringVar(&flagConfigStartCommand, "start-command", "", "Command to start the service")
 	configSetCmd.Flags().StringVar(&flagConfigHealthCheck, "health-check", "", "HTTP path for health check (e.g. /health)")
 	configSetCmd.Flags().IntVar(&flagConfigHealthCheckTimeout, "health-check-timeout", 0, "Seconds the app may take to answer the health check before the deploy fails (default 300, max 600; pass 0 to restore the default)")
+	configSetCmd.Flags().IntVar(&flagConfigShutdownTimeout, "shutdown-timeout", 0, "Seconds between SIGTERM and SIGKILL of each replica when the version leaves — deploy, scale down, restart (default 30, max 300; pass 0 to restore the default). Applies to replicas created from the next deploy on")
 	configCmd.PersistentFlags().StringVarP(&configService, "service", "s", "", "Service name, slug, or ID (overrides linked service)")
 	configCmd.AddCommand(configSetCmd)
 	configCmd.AddCommand(configShowCmd)
 	rootCmd.AddCommand(configCmd)
 }
+
+// Faixa do tempo de desligamento (deploy.shutdownTimeoutSeconds): a mesma da API
+// e do orchestrator. Validada aqui só para a mensagem sair antes da chamada.
+const (
+	maxShutdownTimeoutSeconds     = 300
+	defaultShutdownTimeoutSeconds = 30
+)

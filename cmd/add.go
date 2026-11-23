@@ -57,6 +57,7 @@ var (
 	flagAddStartCommand       string
 	flagAddHealthCheck        string
 	flagAddHealthCheckTimeout int
+	flagAddShutdownTimeout    int
 	flagAddRegistryUser       string
 	flagAddRegistryPassword   string
 	flagAddRegistryHost       string
@@ -280,7 +281,10 @@ Examples:
 
 		// Apply build/deploy config if any flags were provided
 		hasBuildConfig := flagAddBuilder != "" || flagAddDockerfilePath != "" || flagAddDockerContext != ""
-		hasDeployConfig := flagAddStartCommand != "" || flagAddHealthCheck != "" || flagAddHealthCheckTimeout > 0
+		if flagAddShutdownTimeout < 0 || flagAddShutdownTimeout > maxShutdownTimeoutSeconds {
+			return fmt.Errorf("--shutdown-timeout must be between 1 and %d seconds", maxShutdownTimeoutSeconds)
+		}
+		hasDeployConfig := flagAddStartCommand != "" || flagAddHealthCheck != "" || flagAddHealthCheckTimeout > 0 || flagAddShutdownTimeout > 0
 		if hasBuildConfig || hasDeployConfig {
 			req := &api.UpdateInstanceRequest{}
 			if hasBuildConfig {
@@ -299,6 +303,9 @@ Examples:
 				// resetar, então só enviamos o timeout quando ele foi pedido.
 				if flagAddHealthCheckTimeout > 0 {
 					req.Deploy.HealthCheckTimeout = &flagAddHealthCheckTimeout
+				}
+				if flagAddShutdownTimeout > 0 {
+					req.Deploy.ShutdownTimeoutSeconds = api.OptionalIntValue(flagAddShutdownTimeout)
 				}
 			}
 			err = ui.RunWithSpinner("Configuring service...", func() error {
@@ -482,6 +489,7 @@ func init() {
 	addCmd.Flags().StringVar(&flagAddStartCommand, "start-command", "", "Command to start the service")
 	addCmd.Flags().StringVar(&flagAddHealthCheck, "health-check", "", "HTTP path for health check (e.g. /health)")
 	addCmd.Flags().IntVar(&flagAddHealthCheckTimeout, "health-check-timeout", 0, "Seconds the app may take to answer the health check before the deploy fails (default 300, max 600)")
+	addCmd.Flags().IntVar(&flagAddShutdownTimeout, "shutdown-timeout", 0, "Seconds between SIGTERM and SIGKILL of each replica when the version leaves (default 30, max 300)")
 	addCmd.Flags().StringVar(&flagAddRegistryUser, "registry-user", "", "Usuário do registry privado (com --image, imagem privada)")
 	addCmd.Flags().StringVar(&flagAddRegistryPassword, "registry-password", "", "Senha/token do registry privado (armazenada como secret)")
 	addCmd.Flags().StringVar(&flagAddRegistryHost, "registry-host", "", "Host do registry (ex: ghcr.io); inferido da imagem se omitido")
