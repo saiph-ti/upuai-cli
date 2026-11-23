@@ -308,6 +308,8 @@ upuai db backup --out backup.dump      # Postgres: pg_dump (--out required)
 upuai db backup                        # MySQL: mysqldump → <service>-<UTC timestamp>.sql
 upuai db restore backup.dump --yes     # Postgres: pg_restore (-f also works)
 upuai db restore backup.sql --yes      # MySQL: streams the file into mysql
+upuai db recovery-window               # Postgres: point-in-time restore window (paid plans, v0.31.0+)
+upuai db recover --to 2026-11-23T09:30:00-03:00   # restore into a NEW database (source untouched)
 upuai db public                        # is it published? from which origins? (= db public status)
 upuai db public enable --allow 203.0.113.7 --allow 10.0.0.0/8
 upuai db public enable --any --yes     # open to any IP (no prompt)

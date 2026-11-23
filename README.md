@@ -163,6 +163,8 @@ See [Workspaces](#workspaces) for how linked directories pin their workspace.
 | `db connect --print` | Print the public connection string (script-friendly); MySQL also prints host, port, user and database |
 | `db backup --out <file>` | PostgreSQL: `pg_dump` (custom format) via the public endpoint. MySQL: `mysqldump`; `--out` defaults to `<service>-<UTC timestamp>.sql` |
 | `db restore <file>` / `-f <file>` | PostgreSQL: `pg_restore`. MySQL: streams the `.sql` file into `mysql`. A dump of the other engine is refused |
+| `db recovery-window` | PostgreSQL: from when to when the database can be restored to a point in time (oldest retained daily backup → last archived WAL; the plan's backup retention, paid plans; v0.31.0+) |
+| `db recover --to <RFC 3339> [--name N]` | PostgreSQL: restore to a point in time into a NEW database in the same environment — the current one is not changed; owner/admin (API tokens: deploy scope); v0.31.0+ |
 | `db public` / `db public status` | Show the public endpoint and which origins may connect (MySQL: also user, database and TLS state) |
 | `db public enable --allow <ip\|cidr>` | Publish restricted to those origins (repeatable; replaces the list) |
 | `db public enable --any` | Publish open to any IP |
