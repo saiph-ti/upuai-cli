@@ -1,0 +1,40 @@
+package cmd
+
+import (
+	"slices"
+	"testing"
+
+	"github.com/upuai-cloud/cli/internal/api"
+)
+
+// Um proxy restrito nunca é aberto por omissão: sem --allow/--any a lista atual
+// vai de novo; --any abre; --allow substitui (normalizado).
+func TestResolveTcpProxyAllowList(t *testing.T) {
+	reset := func() { tcpProxyAllow, tcpProxyAllowAny = nil, false }
+	t.Cleanup(reset)
+	restricted := &api.TcpProxyInfo{Enabled: true, AllowedCidrs: []string{"203.0.113.7/32"}}
+
+	reset()
+	if got, err := resolveTcpProxyAllowList(restricted); err != nil || !slices.Equal(got, restricted.AllowedCidrs) {
+		t.Fatalf("omissão = %v, %v; want a lista atual", got, err)
+	}
+	reset()
+	if got, err := resolveTcpProxyAllowList(&api.TcpProxyInfo{}); err != nil || len(got) != 0 {
+		t.Fatalf("desligado sem flags = %v, %v; want vazio", got, err)
+	}
+	reset()
+	tcpProxyAllowAny = true
+	if got, err := resolveTcpProxyAllowList(restricted); err != nil || len(got) != 0 {
+		t.Fatalf("--any = %v, %v; want vazio (aberto)", got, err)
+	}
+	reset()
+	tcpProxyAllow = []string{"198.51.100.9", "198.51.100.0/24"}
+	if got, err := resolveTcpProxyAllowList(restricted); err != nil || !slices.Equal(got, []string{"198.51.100.9/32", "198.51.100.0/24"}) {
+		t.Fatalf("--allow = %v, %v", got, err)
+	}
+	reset()
+	tcpProxyAllow, tcpProxyAllowAny = []string{"198.51.100.9"}, true
+	if _, err := resolveTcpProxyAllowList(restricted); err == nil {
+		t.Fatal("--any com --allow tem de falhar")
+	}
+}

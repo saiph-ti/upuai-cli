@@ -312,6 +312,9 @@ upuai db public                        # is it published? from which origins? (=
 upuai db public enable --allow 203.0.113.7 --allow 10.0.0.0/8
 upuai db public enable --any --yes     # open to any IP (no prompt)
 upuai db public disable                # unpublish (route + allowlist removed)
+upuai tcp-proxy enable                 # web service: public raw TCP port proxy.upuai.cloud:<port> → service port (paid plans, v0.31.0+)
+upuai tcp-proxy enable --port 9000 --allow 203.0.113.0/24   # another app port, restricted origins
+upuai tcp-proxy disable                # remove the port (stays reserved for the service)
 upuai db extensions                    # managed Postgres extensions: enabled / available / unavailable
 upuai db extensions enable postgis     # CREATE EXTENSION (instant, no restart)
 upuai db extensions disable postgis --yes  # DROP EXTENSION ... RESTRICT (refused while in use)

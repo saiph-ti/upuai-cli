@@ -176,6 +176,17 @@ See [Workspaces](#workspaces) for how linked directories pin their workspace.
 | `db credentials repair` | Managed MySQL: check that the application account can log in and re-apply it if the database refuses it. Does not change the password. Lists the services to redeploy |
 | `db credentials rotate` | Managed MySQL: generate a new password (the current one stops opening connections immediately). Owner/admin; `-y` skips confirmation. Lists the services to redeploy |
 
+### Public TCP proxy (web services, v0.31.0+)
+
+| Command | Description |
+|---------|-------------|
+| `tcp-proxy` / `tcp-proxy status` | Show the public TCP port of the linked web service (`proxy.upuai.cloud:<port>`), the application port and which origins may connect |
+| `tcp-proxy enable` | Publish a public TCP port that forwards raw TCP (no HTTP, no platform TLS) to the service port; `--port N` forwards to another port of the app |
+| `tcp-proxy enable --allow <ip\|cidr>` / `--any` | Restrict to those origins (repeatable; replaces the list) or open to any IP. With neither, an enabled proxy keeps its allowlist |
+| `tcp-proxy disable` | Remove the public port (it stays reserved: enabling again keeps the same address) |
+
+Paid plans; owner/admin role (API tokens: deploy scope). Every source IP is capped at 1000 concurrent connections. For devices that only speak `ws://`, MQTT or custom protocols — with TLS support, prefer `wss://` on the service's HTTPS domain.
+
 ### Volumes
 
 | Command | Description |
